@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reg/Index Validation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        input {
+            padding: 10px;
+            width: 300px;
+            font-size: 16px;
+        }
+
+        .error {
+            color: red;
+            margin-top: 5px;
+        }
+
+        .success {
+            color: green;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<h3>Ingiza Reg No au Index No</h3>
+
+<form id="myForm">
+    <input type="text" id="regInput" placeholder="Mfano: 02.1422.01.01.2021 au S3456/0042/2024">
+    <br><br>
+    <button type="submit">Submit</button>
+    <div id="message"></div>
+</form>
+
+<script>
+    const form = document.getElementById("myForm");
+    const input = document.getElementById("regInput");
+    const message = document.getElementById("message");
+
+    // regex ya kukubali Reg No AU Index No
+    const pattern = /(^\d{2}\.\d{4}\.\d{2}\.\d{2}\.\d{4}$)|(^[A-Z]\d{4}\/\d{4}\/\d{4}$)/;
+
+    form.addEventListener("submit", function(e) {
+        e.preventDefault(); // zuia form ku-submit kwanza
+
+        if(pattern.test(input.value.trim())) {
+            message.textContent = "Namba sahihi ✔";
+            message.className = "success";
+        } else {
+            message.textContent = "Namba si sahihi! Tumia format sahihi.";
+            message.className = "error";
+        }
+    });
+</script>
+
+</body>
+</html>

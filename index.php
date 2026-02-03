@@ -125,39 +125,38 @@
                     <!-- Register Form -->
                     <div class="auth-form" id="registerForm">
                         <form id="registerFormElement">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="firstName" class="form-label">First Name</label>
-                                    <input type="text" class="form-control" id="firstName" placeholder="Enter first name" required>
-                                </div>
-                                <div class="col-md-6">
+                           
+                                <div class="mb-3">
+                                    <label for="username" class="form-label">User Name <span>*</span></label>
+                                    <input type="text" class="form-control" id="username" placeholder="Enter user name" >
+                                <!-- <div class="col-md-6 d-none">
                                     <label for="lastName" class="form-label">Last Name</label>
-                                    <input type="text" class="form-control" id="lastName" placeholder="Enter last name" required>
-                                </div>
+                                    <input type="text" class="form-control" id="lastName" placeholder="Enter last name" >
+                                </div> -->
                             </div>
                             <div class="mb-3">
-                                <label for="registerEmail" class="form-label">Email Address</label>
-                                <input type="email" class="form-control" id="registerEmail" placeholder="Enter email" required>
+                                <label for="registerEmail" class="form-label">Email Address <span>*</span></label>
+                                <input type="email" class="form-control" id="registerEmail" placeholder="Enter email" >
                             </div>
                             <div class="mb-3">
-                                <label for="phoneNumber" class="form-label">Phone Number</label>
+                                <label for="phoneNumber" class="form-label">Phone Number <span>*</span></label>
                                 <div class="input-group">
                                     <span class="input-group-text">+255</span>
-                                    <input type="tel" class="form-control" id="phoneNumber" placeholder="712345678" required>
+                                    <input type="tel" class="form-control" id="phoneNumber" placeholder="712345678" >
                                 </div>
                             </div>
                             <div class="mb-3">
-                                <label for="registerPassword" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="registerPassword" placeholder="Enter password" required>
+                                <label for="registerPassword" class="form-label">Password <span>*</span></label>
+                                <input type="password" class="form-control" id="registerPassword" placeholder="Enter password" >
                             </div>
                             <div class="mb-3">
-                                <label for="confirmPassword" class="form-label">Confirm Password</label>
-                                <input type="password" class="form-control" id="confirmPassword" placeholder="Confirm password" required>
+                                <label for="confirmPassword" class="form-label">Confirm Password <span>*</span></label>
+                                <input type="password" class="form-control" id="confirmPassword" placeholder="Confirm password" >
                             </div>
-                            <div class="mb-3 form-check">
+                            <!-- <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="agreeTerms" required>
                                 <label class="form-check-label" for="agreeTerms">I agree to the <a href="#">Terms & Conditions</a></label>
-                            </div>
+                            </div> -->
                             <button type="submit" class="btn btn-primary w-100">Create Account</button>
                         </form>
                     </div>
@@ -787,34 +786,62 @@
         function handleRegister(e) {
             e.preventDefault();
             
-            const firstName = document.getElementById('firstName').value;
-            const lastName = document.getElementById('lastName').value;
-            const email = document.getElementById('registerEmail').value;
-            const phone = document.getElementById('phoneNumber').value;
+            // Clear previous error messages
+            clearValidationErrors();
+            
+            const userName = document.getElementById('username').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const phone = document.getElementById('phoneNumber').value.trim();
             const password = document.getElementById('registerPassword').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
             
-            // Validation
-            if (!firstName || !lastName || !email || !phone || !password || !confirmPassword) {
-                showAlert('Please fill in all fields', 'danger');
+            let hasErrors = false;
+            
+            // Validation - prevent submission if validation fails
+            if (!userName || !email || !phone || !password || !confirmPassword) {
+                showValidationError('username', 'Please fill in all fields');
+                showValidationError('registerEmail', 'Please fill in all fields');
+                showValidationError('phoneNumber', 'Please fill in all fields');
+                showValidationError('registerPassword', 'Please fill in all fields');
+                showValidationError('confirmPassword', 'Please fill in all fields');
+                hasErrors = true;
+            }
+            
+            if (userName && userName.length < 3) {
+                showValidationError('username', 'Username must be at least 3 characters');
+                hasErrors = true;
+            }
+            
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showValidationError('registerEmail', 'Please enter a valid email address');
+                hasErrors = true;
+            }
+            
+            if (phone && !/^\d{9}$/.test(phone)) {
+                showValidationError('phoneNumber', 'Phone number must be 9 digits');
+                hasErrors = true;
+            }
+            
+            if (password && password.length < 6) {
+                showValidationError('registerPassword', 'Password must be at least 6 characters');
+                hasErrors = true;
+            }
+            
+            if (password && confirmPassword && password !== confirmPassword) {
+                showValidationError('confirmPassword', 'Passwords do not match');
+                hasErrors = true;
+            }
+            
+            // If validation fails, keep modal open and display errors
+            if (hasErrors) {
                 return;
             }
             
-            if (password !== confirmPassword) {
-                showAlert('Passwords do not match', 'danger');
-                return;
-            }
-            
-            if (password.length < 6) {
-                showAlert('Password must be at least 6 characters', 'danger');
-                return;
-            }
-            
-            // Create user
+            // If all validations pass, create user account
             currentUser = {
-                firstName,
-                lastName,
-                email,
+                firstName: userName,
+                lastName: '',
+                email: email,
                 phone: '+255' + phone
             };
             
@@ -828,9 +855,41 @@
             authModal.hide();
             showAlert('Account created successfully!', 'success');
             
-            // Reset form and switch to login
+            // Reset form
             registerFormElement.reset();
-            switchAuthTab('login');
+        }
+        
+        // Helper function to show validation errors
+        function showValidationError(fieldId, errorMessage) {
+            const field = document.getElementById(fieldId);
+            const formGroup = field.closest('.mb-3');
+            
+            // Add error class to field
+            field.classList.add('is-invalid');
+            
+            // Create or update error message
+            let errorElement = formGroup.querySelector('.invalid-feedback');
+            if (!errorElement) {
+                errorElement = document.createElement('div');
+                errorElement.className = 'invalid-feedback d-block';
+                formGroup.appendChild(errorElement);
+            }
+            errorElement.textContent = errorMessage;
+        }
+        
+        // Helper function to clear validation errors
+        function clearValidationErrors() {
+            const registerForm = document.getElementById('registerForm');
+            const fields = registerForm.querySelectorAll('.is-invalid');
+            const errorMessages = registerForm.querySelectorAll('.invalid-feedback');
+            
+            fields.forEach(field => {
+                field.classList.remove('is-invalid');
+            });
+            
+            errorMessages.forEach(msg => {
+                msg.remove();
+            });
         }
 
         // Handle logout

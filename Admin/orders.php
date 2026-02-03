@@ -114,6 +114,79 @@
                 </div>
             </div>
         </div>
+        <!-- Order Details Modal -->
+        <div class="modal fade admin-modal" id="orderDetailsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Order Details - #ORD-<span id="orderIdDisplay"></span></h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Customer Information</h6>
+                                <p class="mb-1"><strong>Name:</strong> <span id="customerName">John Doe</span></p>
+                                <p class="mb-1"><strong>Phone:</strong> <span id="customerPhone">+255 712 345 678</span></p>
+                                <p class="mb-1"><strong>Email:</strong> <span id="customerEmail">john@example.com</span></p>
+                                <p class="mb-0"><strong>Address:</strong> <span id="customerAddress">123 Street, Dar es Salaam</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Order Information</h6>
+                                <p class="mb-1"><strong>Order Time:</strong> <span id="orderTime">Today, 10:30 AM</span></p>
+                                <p class="mb-1"><strong>Restaurant:</strong> <span id="orderRestaurant">Mama Ntilie Restaurant</span></p>
+                                <p class="mb-1"><strong>Payment Method:</strong> <span id="paymentMethod">M-Pesa</span></p>
+                                <p class="mb-0"><strong>Status:</strong> <span id="orderStatus" class="status-badge status-pending">Pending</span></p>
+                            </div>
+                        </div>
+                        
+                        <div class="order-details-card">
+                            <h6>Order Items</h6>
+                            <div class="order-item">
+                                <div>Nyama Choma Special x2</div>
+                                <div>TZS 36,000</div>
+                            </div>
+                            <div class="order-item">
+                                <div>Wali na Maharage x1</div>
+                                <div>TZS 8,000</div>
+                            </div>
+                            <div class="order-item">
+                                <div>Delivery Fee</div>
+                                <div>TZS 2,500</div>
+                            </div>
+                            <div class="order-item">
+                                <div>Tax (18%)</div>
+                                <div>TZS 8,370</div>
+                            </div>
+                            <div class="order-item">
+                                <div><strong>Total Amount</strong></div>
+                                <div><strong>TZS 54,870</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Update Order Status</label>
+                            <select class="form-control form-control-admin" id="updateOrderStatus">
+                                <option value="pending">Pending</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="preparing">Preparing</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control form-control-admin" rows="2" placeholder="Add notes about this order..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-admin btn-admin-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-admin btn-admin-primary">Update Order</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     <script src="../Assets/jquery/jquery.min.js"></script>
 </body>
