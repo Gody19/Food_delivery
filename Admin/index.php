@@ -686,53 +686,7 @@
         }
 
         // Load restaurants
-        function loadRestaurants() {
-            restaurantsGrid.innerHTML = '';
-            
-            restaurants.forEach(restaurant => {
-                const col = document.createElement('div');
-                col.className = 'col-xl-4 col-md-6 mb-4';
-                col.innerHTML = `
-                    <div class="dashboard-card h-100">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-3">
-                                <div>
-                                    <h5 class="card-title mb-1">${restaurant.name}</h5>
-                                    <p class="text-muted mb-0">${restaurant.cuisine}</p>
-                                </div>
-                                <span class="badge ${restaurant.status === 'active' ? 'bg-success' : 'bg-warning'}">${restaurant.status}</span>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-6">
-                                    <div class="text-muted small">Total Orders</div>
-                                    <div class="fw-bold">${restaurant.orders}</div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="text-muted small">Total Revenue</div>
-                                    <div class="fw-bold">${restaurant.revenue}</div>
-                                </div>
-                            </div>
-                            
-                            <div class="d-flex align-items-center mb-3">
-                                <div class="text-warning me-2">
-                                    ${generateStarRating(restaurant.rating)}
-                                </div>
-                                <span class="text-muted">${restaurant.rating}/5.0</span>
-                            </div>
-                            
-                            <div class="d-flex">
-                                <button class="btn btn-admin btn-admin-primary btn-sm me-2 flex-fill">View Details</button>
-                                <button class="btn btn-admin ${restaurant.status === 'active' ? 'btn-admin-warning' : 'btn-admin-success'} btn-sm flex-fill">
-                                    ${restaurant.status === 'active' ? 'Deactivate' : 'Activate'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                restaurantsGrid.appendChild(col);
-            });
-        }
+        
 
         // Load menu items
         function loadMenuItems() {

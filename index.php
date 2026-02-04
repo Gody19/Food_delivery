@@ -1,3 +1,133 @@
+<?php
+include 'config/connection.php';
+
+// Initialize message variables
+$success = false;
+$message = '';
+
+function sanitize($data, $type = 'string') {
+
+    if ($data === null) return false;
+
+    switch ($type) {
+
+        case 'string':
+            $data = trim($data);
+            $data = stripslashes($data);
+            $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+            break;
+
+        case 'phone':
+            $data = preg_replace('/\D+/', '', $data);
+            if (!preg_match('/^\d{9}$/', $data)) {
+                return false;
+            }
+            break;
+
+        case 'role':
+            $allowed = ['user', 'restaurant_owner', 'admin'];
+            $data = strtolower(trim($data));
+            if (!in_array($data, $allowed)) {
+                return false;
+            }
+            break;
+
+        case 'password':
+            $data = trim($data);
+            if (strlen($data) < 6) {
+                return false;
+            }
+            break;
+
+        case 'email':
+            $data = filter_var(trim($data), FILTER_SANITIZE_EMAIL);
+            if (!filter_var($data, FILTER_VALIDATE_EMAIL)) {
+                return false;
+            }
+            break;
+
+        case 'url':
+            $data = filter_var($data, FILTER_SANITIZE_URL);
+            if (!filter_var($data, FILTER_VALIDATE_URL)) {
+                return false;
+            }
+            break;
+
+        case 'int':
+            $data = filter_var($data, FILTER_SANITIZE_NUMBER_INT);
+            if (!filter_var($data, FILTER_VALIDATE_INT)) {
+                return false;
+            }
+            break;
+
+        case 'float':
+            $data = filter_var($data, FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
+            if (!filter_var($data, FILTER_VALIDATE_FLOAT)) {
+                return false;
+            }
+            break;
+
+        default:
+            return false;
+    }
+
+    return $data;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = sanitize($_POST['username'] ?? '', 'string');
+    $email = sanitize($_POST['email'] ?? '', 'email');
+    $phone_number = sanitize($_POST['phone_number'] ?? '', 'phone');
+    $password = sanitize($_POST['password'] ?? '', 'password');
+
+    $role = 'user'; // default role
+
+    // Validate sanitized results
+    if (!$username || !$email || !$phone_number || !$password) {
+        $message = 'Invalid input detected.';
+    } elseif (!isset($conn) || $conn->connect_error) {
+        $message = 'Database connection error.';
+    } else {
+        // Check duplicate email
+        $sql = "SELECT id FROM users WHERE email = ? LIMIT 1";
+        $query = $conn->prepare($sql);
+        if (!$query) {
+            $message = 'Prepare failed: ' . $conn->error;
+        } else {
+            $query->bind_param('s', $email);
+            $query->execute();
+            $query->store_result();
+
+            if ($query->num_rows > 0) {
+                $message = 'Email already registered.';
+                $query->close();
+            } else {
+                $query->close();
+
+                // Hash password
+                $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+
+                // Insert user using prepared statement
+                $sql = "INSERT INTO users (username, email, phone_number, role, password) VALUES (?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) {
+                    $message = 'Prepare failed: ' . $conn->error;
+                } else {
+                    $stmt->bind_param('sssss', $username, $email, $phone_number, $role, $hashedPassword);
+                    if ($stmt->execute()) {
+                        $success = true;
+                        $message = 'User registered successfully.';
+                    } else {
+                        $message = 'Error: ' . $stmt->error;
+                    }
+                    $stmt->close();
+                }
+            }
+        }
+    }
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,9 +138,32 @@
     <link href="Assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="Assets/fontawesome/css/all.min.css">
+    <!-- SweetAlert2 CSS -->
+    <link rel="stylesheet" href="Assets/sweetalert2/sweetalert2.min.css">
     <link rel="stylesheet" href="Assets/css/index.css" >
 </head>
 <body>
+    <!-- Display registration message from backend using SweetAlert -->
+    <?php if (!empty($message)): ?>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            Swal.fire({
+                icon: <?php echo $success ? "'success'" : "'error'"; ?>,
+                title: <?php echo $success ? "'Success!'" : "'Registration Failed'"; ?>,
+                text: <?php echo json_encode($message); ?>,
+                confirmButtonColor: <?php echo $success ? "'#28a745'" : "'#dc3545'"; ?>
+            }).then(() => {
+                <?php if ($success): ?>
+                    // Reset form and close modal on success
+                    document.getElementById('registerFormElement').reset();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('authModal'));
+                    if (modal) modal.hide();
+                <?php endif; ?>
+            });
+        });
+    </script>
+    <?php endif; ?>
+
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top">
         <div class="container">
@@ -124,34 +277,34 @@
                     
                     <!-- Register Form -->
                     <div class="auth-form" id="registerForm">
-                        <form id="registerFormElement">
+                        <form method="post" action="index.php" id="registerFormElement">
                            
                                 <div class="mb-3">
                                     <label for="username" class="form-label">User Name <span>*</span></label>
-                                    <input type="text" class="form-control" id="username" placeholder="Enter user name" >
-                                <!-- <div class="col-md-6 d-none">
-                                    <label for="lastName" class="form-label">Last Name</label>
-                                    <input type="text" class="form-control" id="lastName" placeholder="Enter last name" >
-                                </div> -->
+                                    <input type="text" class="form-control" id="username" name="username" placeholder="Enter user name" >
                             </div>
                             <div class="mb-3">
                                 <label for="registerEmail" class="form-label">Email Address <span>*</span></label>
-                                <input type="email" class="form-control" id="registerEmail" placeholder="Enter email" >
+                                <input type="email" class="form-control" name="email" id="registerEmail" placeholder="Enter email" >
                             </div>
                             <div class="mb-3">
                                 <label for="phoneNumber" class="form-label">Phone Number <span>*</span></label>
                                 <div class="input-group">
                                     <span class="input-group-text">+255</span>
-                                    <input type="tel" class="form-control" id="phoneNumber" placeholder="712345678" >
+                                    <input type="tel" name="phone_number" class="form-control" id="phoneNumber" placeholder="712345678" >
                                 </div>
+                            </div>
+                            <div class="mb-3 d-none">
+                                <label for="" class="form-label">Role <span>*</span></label>
+                                <input type="text" name="role" class="form-control" placeholder="Enter role" value="user">
                             </div>
                             <div class="mb-3">
                                 <label for="registerPassword" class="form-label">Password <span>*</span></label>
-                                <input type="password" class="form-control" id="registerPassword" placeholder="Enter password" >
+                                <input type="password" name="password" class="form-control" id="registerPassword" placeholder="Enter password" >
                             </div>
                             <div class="mb-3">
                                 <label for="confirmPassword" class="form-label">Confirm Password <span>*</span></label>
-                                <input type="password" class="form-control" id="confirmPassword" placeholder="Confirm password" >
+                                <input type="password" name="confirm_password" class="form-control" id="confirmPassword" placeholder="Confirm password" >
                             </div>
                             <!-- <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="agreeTerms" required>
@@ -506,6 +659,8 @@
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="Assets/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <!-- SweetAlert2 JS -->
+    <script src="Assets/sweetalert2/sweetalert2.all.min.js"></script>
     
     <script>
         // Enhanced data structure with restaurant-food relationships
@@ -782,21 +937,22 @@
             loginFormElement.reset();
         }
 
-        // Handle register form submission
+
+        // Handle register form submission: validate and submit normally
         function handleRegister(e) {
             e.preventDefault();
-            
+
             // Clear previous error messages
             clearValidationErrors();
-            
+
             const userName = document.getElementById('username').value.trim();
             const email = document.getElementById('registerEmail').value.trim();
             const phone = document.getElementById('phoneNumber').value.trim();
             const password = document.getElementById('registerPassword').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
-            
+
             let hasErrors = false;
-            
+
             // Validation - prevent submission if validation fails
             if (!userName || !email || !phone || !password || !confirmPassword) {
                 showValidationError('username', 'Please fill in all fields');
@@ -806,58 +962,41 @@
                 showValidationError('confirmPassword', 'Please fill in all fields');
                 hasErrors = true;
             }
-            
+
             if (userName && userName.length < 3) {
                 showValidationError('username', 'Username must be at least 3 characters');
                 hasErrors = true;
             }
-            
+
             if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                 showValidationError('registerEmail', 'Please enter a valid email address');
                 hasErrors = true;
             }
-            
+
             if (phone && !/^\d{9}$/.test(phone)) {
                 showValidationError('phoneNumber', 'Phone number must be 9 digits');
                 hasErrors = true;
             }
-            
+
             if (password && password.length < 6) {
                 showValidationError('registerPassword', 'Password must be at least 6 characters');
                 hasErrors = true;
             }
-            
+
             if (password && confirmPassword && password !== confirmPassword) {
                 showValidationError('confirmPassword', 'Passwords do not match');
                 hasErrors = true;
             }
-            
+
             // If validation fails, keep modal open and display errors
             if (hasErrors) {
                 return;
             }
-            
-            // If all validations pass, create user account
-            currentUser = {
-                firstName: userName,
-                lastName: '',
-                email: email,
-                phone: '+255' + phone
-            };
-            
-            // Save to localStorage
-            localStorage.setItem('foodExpressUser', JSON.stringify(currentUser));
-            
-            // Update UI
-            updateUserInterface();
-            
-            // Close modal and show success
-            authModal.hide();
-            showAlert('Account created successfully!', 'success');
-            
-            // Reset form
-            registerFormElement.reset();
+
+            // Validation passed — submit the form normally
+            registerFormElement.submit();
         }
+
         
         // Helper function to show validation errors
         function showValidationError(fieldId, errorMessage) {
