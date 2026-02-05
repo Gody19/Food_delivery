@@ -173,7 +173,7 @@ if (isset($conn) && !$conn->connect_error) {
     <div id="content">
         <?php include 'include/header.php'; ?>
         <div class="main-content">
-            <div class="page-header">
+            <div class="page-header d-none">
                 <h1 class="h3 mb-0">Restaurant Management</h1>
             </div>
             <div class="content-container section-content" id="restaurants-section">
@@ -280,7 +280,57 @@ if (isset($conn) && !$conn->connect_error) {
         </div>
     </div>
 
-    <script src="../Assets/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <!-- Restaurant Detail Modal -->
+    <div class="modal fade" id="restaurantDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailRestaurantName">Restaurant Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 text-center mb-3">
+                            <img id="detailRestaurantImage" src="" alt="Restaurant" class="img-fluid rounded" style="max-height: 300px; object-fit: cover; display: none;">
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Status</label>
+                                <br>
+                                <span id="detailStatus" class="badge bg-success">Active</span>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Owner Name</label>
+                                <p id="detailOwnerName" class="text-muted">-</p>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Cuisine Type</label>
+                                <p id="detailCuisineType" class="text-muted">-</p>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Commission Rate</label>
+                                <p id="detailCommissionRate" class="text-muted">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Phone Number</label>
+                            <p id="detailPhoneNumber" class="text-muted">-</p>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Address</label>
+                        <p id="detailAddress" class="text-muted">-</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+      <script src="../Assets/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="../Assets/fontawesome/js/all.min.js"></script>
     <script src="../Assets/sweetalert2/sweetalert2.all.min.js"></script>
     <script>
@@ -376,8 +426,9 @@ if (isset($conn) && !$conn->connect_error) {
         });
 
         // Display restaurants in grid
+        let restaurants = []; // Global variable for viewRestaurant to access
         document.addEventListener('DOMContentLoaded', function() {
-            const restaurants = <?php echo json_encode($restaurants); ?>;
+            restaurants = <?php echo json_encode($restaurants); ?>;
             const grid = document.getElementById('restaurantsGrid');
             
             console.log('Total restaurants fetched:', restaurants.length);
@@ -401,12 +452,12 @@ if (isset($conn) && !$conn->connect_error) {
                 restaurantCard.innerHTML = `
                     <div class="dashboard-card h-100">
                         <div class="card-body">
+                            <!-- Header: Restaurant Name, Cuisine, Status Badge -->
                             <div class="d-flex justify-content-between align-items-start mb-3">
                                 <div class="flex-grow-1">
                                     <h5 class="card-title mb-1">${escapeHtml(restaurant.restaurant_name)}</h5>
-                                    <p class="text-muted mb-0" style="font-size: 0.85rem;">
-                                        <strong>Owner:</strong> ${escapeHtml(restaurant.restaurant_owner)}<br>
-                                        <strong>Cuisine:</strong> ${escapeHtml(restaurant.cuisine_type)}
+                                    <p class="text-muted mb-0" style="font-size: 0.9rem;">
+                                        ${escapeHtml(restaurant.cuisine_type)}
                                     </p>
                                 </div>
                                 <span class="badge ${restaurant.status === 'active' ? 'bg-success' : restaurant.status === 'inactive' ? 'bg-warning' : 'bg-danger'}" style="white-space: nowrap;">
@@ -414,34 +465,37 @@ if (isset($conn) && !$conn->connect_error) {
                                 </span>
                             </div>
 
+                            <!-- Stats: Total Orders and Total Revenue -->
                             <div class="row mb-3">
                                 <div class="col-6">
-                                    <div class="text-muted small">Phone</div>
-                                    <div class="fw-bold small">+255${escapeHtml(restaurant.phone_number)}</div>
+                                    <div class="text-muted small">Total Orders</div>
+                                    <div class="fw-bold" style="font-size: 1.5rem;">248</div>
                                 </div>
                                 <div class="col-6">
-                                    <div class="text-muted small">Commission</div>
-                                    <div class="fw-bold small">${restaurant.commission_rate}%</div>
+                                    <div class="text-muted small">Total Revenue</div>
+                                    <div class="fw-bold" style="font-size: 1.5rem;">TZS 4.2M</div>
                                 </div>
                             </div>
 
-                            <div class="mb-3">
-                                <div class="text-muted small">Address</div>
-                                <p class="small mb-0">${escapeHtml(restaurant.address)}</p>
+                            <!-- Rating Section -->
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="text-warning me-2" style="font-size: 1rem;">
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star-half-alt"></i>
+                                </div>
+                                <span class="text-muted small">4.7/5.0</span>
                             </div>
 
-                            <div class="d-flex gap-2 flex-wrap">
-                                <button class="btn btn-admin btn-admin-primary btn-sm flex-fill" onclick="viewRestaurant(${restaurant.id})" title="View Details">
-                                    <i class="fas fa-eye me-1"></i><span class="d-none d-md-inline">View</span>
+                            <!-- Action Buttons -->
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm flex-fill" onclick="viewRestaurant(${restaurant.id})">
+                                    View Details
                                 </button>
-                                <button class="btn btn-admin btn-admin-info btn-sm flex-fill" onclick="editRestaurant(${restaurant.id})" title="Edit">
-                                    <i class="fas fa-edit me-1"></i><span class="d-none d-md-inline">Edit</span>
-                                </button>
-                                <button class="btn btn-admin ${restaurant.status === 'active' ? 'btn-admin-warning' : 'btn-admin-success'} btn-sm flex-fill" onclick="toggleRestaurantStatus(${restaurant.id}, '${restaurant.status}')" title="${restaurant.status === 'active' ? 'Deactivate' : 'Activate'}">
-                                    <i class="fas ${restaurant.status === 'active' ? 'fa-pause' : 'fa-play'} me-1"></i><span class="d-none d-md-inline">${restaurant.status === 'active' ? 'Pause' : 'Active'}</span>
-                                </button>
-                                <button class="btn btn-admin btn-admin-danger btn-sm flex-fill" onclick="deleteRestaurant(${restaurant.id})" title="Delete">
-                                    <i class="fas fa-trash me-1"></i><span class="d-none d-md-inline">Delete</span>
+                                <button class="btn btn-warning btn-sm flex-fill" onclick="toggleRestaurantStatus(${restaurant.id}, '${restaurant.status}')">
+                                    ${restaurant.status === 'active' ? 'Deactivate' : 'Activate'}
                                 </button>
                             </div>
                         </div>
@@ -465,12 +519,34 @@ if (isset($conn) && !$conn->connect_error) {
         }
 
         function viewRestaurant(id) {
-            Swal.fire({
-                icon: 'info',
-                title: 'Restaurant Details',
-                text: 'View details for restaurant ID: ' + id,
-                confirmButtonText: 'OK'
-            });
+            const restaurant = restaurants.find(r => r.id == id);
+            if (!restaurant) {
+                Swal.fire('Error', 'Restaurant not found', 'error');
+                return;
+            }
+
+            // Populate modal with restaurant details
+            document.getElementById('detailRestaurantName').textContent = escapeHtml(restaurant.restaurant_name);
+            document.getElementById('detailOwnerName').textContent = escapeHtml(restaurant.restaurant_owner);
+            document.getElementById('detailCuisineType').textContent = escapeHtml(restaurant.cuisine_type);
+            document.getElementById('detailPhoneNumber').textContent = '+255' + escapeHtml(restaurant.phone_number);
+            document.getElementById('detailCommissionRate').textContent = restaurant.commission_rate + '%';
+            document.getElementById('detailAddress').textContent = escapeHtml(restaurant.address);
+            document.getElementById('detailStatus').textContent = escapeHtml(restaurant.status);
+            document.getElementById('detailStatus').className = 'badge ' + (restaurant.status === 'active' ? 'bg-success' : restaurant.status === 'inactive' ? 'bg-warning' : 'bg-danger');
+            
+            // Set restaurant image
+            const imageElement = document.getElementById('detailRestaurantImage');
+            if (restaurant.restaurant_image) {
+                imageElement.src = '../Assets/img/' + escapeHtml(restaurant.restaurant_image);
+                imageElement.style.display = 'block';
+            } else {
+                imageElement.style.display = 'none';
+            }
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('restaurantDetailModal'));
+            modal.show();
         }
 
         function editRestaurant(id) {

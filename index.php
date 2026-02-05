@@ -126,6 +126,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+// Fetch popular restaurants from database
+$popularRestaurants = [];
+if (isset($conn) && !$conn->connect_error) {
+    $query = "SELECT id, restaurant_name, restaurant_owner, cuisine_type, phone_number, address, commission_rate, status, restaurant_image
+              FROM restaurants WHERE status = 'active' ORDER BY id DESC LIMIT 12";
+    
+    $result = $conn->query($query);
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $popularRestaurants[] = $row;
+        }
+    }
+}
+
+// Fetch all restaurants for full list
+$allRestaurants = [];
+if (isset($conn) && !$conn->connect_error) {
+    $query = "SELECT id, restaurant_name, restaurant_owner, cuisine_type, phone_number, address, commission_rate, status, restaurant_image FROM restaurants WHERE status = 'active' ORDER BY id DESC";
+    
+    $result = $conn->query($query);
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $allRestaurants[] = $row;
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -167,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top">
         <div class="container">
-            <a class="navbar-brand" href="#">
+            <a class="navbar-brand" href="index.php">
                 <i class="fas fa-utensils me-2"></i>FoodChap <span class="tz-flag">🇹🇿</span>
             </a>
             
@@ -178,19 +207,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="#home">Home</a>
+                        <a class="nav-link active" href="index.php#home">Home</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#restaurants">Restaurants</a>
+                        <a class="nav-link" href="index.php#restaurants">Restaurants</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#menu">Menu</a>
+                        <a class="nav-link" href="index.php#menu">Menu</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#testimonials">Testimonials</a>
+                        <a class="nav-link" href="index.php#testimonials">Testimonials</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#payment-methods">Payments</a>
+                        <a class="nav-link" href="index.php#payment-methods">Payments</a>
                     </li>
                 </ul>
                 
@@ -663,45 +692,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="Assets/sweetalert2/sweetalert2.all.min.js"></script>
     
     <script>
-        // Enhanced data structure with restaurant-food relationships
-        const restaurants = [
-            {
-                id: 1,
-                name: "Mama Ntilie Restaurant",
-                cuisine: "Traditional Tanzanian, Nyama Choma",
-                rating: 4.7,
-                deliveryTime: "25-35 min",
-                image: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-                menuItems: [101, 105, 107, 108]
-            },
-            {
-                id: 2,
-                name: "Burger King Dar",
-                cuisine: "Burgers, American, Fast Food",
-                rating: 4.5,
-                deliveryTime: "15-25 min",
-                image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-                menuItems: [102, 109, 110, 111]
-            },
-            {
-                id: 3,
-                name: "Tokyo Sushi Lounge",
-                cuisine: "Japanese, Sushi, Asian",
-                rating: 4.8,
-                deliveryTime: "30-40 min",
-                image: "https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-                menuItems: [103, 112, 113, 114]
-            },
-            {
-                id: 4,
-                name: "Mexican Grill Arusha",
-                cuisine: "Mexican, Tacos, Street Food",
-                rating: 4.4,
-                deliveryTime: "20-30 min",
-                image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-                menuItems: [104, 115, 116, 117]
-            }
-        ];
 
         const menuItems = [
             {
@@ -1086,20 +1076,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function loadRestaurants() {
             restaurantsContainer.innerHTML = '';
             
-            restaurants.forEach(restaurant => {
+            // Use actual restaurant data from PHP
+            const actualRestaurants = <?php echo json_encode($popularRestaurants); ?>;
+            
+            if (!actualRestaurants || actualRestaurants.length === 0) {
+                restaurantsContainer.innerHTML = '<div class="col-12 text-center py-5"><p class="text-muted">No restaurants available at this time.</p></div>';
+                return;
+            }
+            
+            actualRestaurants.forEach(restaurant => {
                 const restaurantCard = document.createElement('div');
                 restaurantCard.className = 'col-md-6 col-lg-3';
                 restaurantCard.innerHTML = `
                     <div class="restaurant-card card h-100 border-0 shadow-sm">
-                        <img src="${restaurant.image}" class="restaurant-img card-img-top" alt="${restaurant.name}">
+                        <img src="Assets/img/${escapeHtml(restaurant.restaurant_image)}" class="restaurant-img card-img-top" alt="${escapeHtml(restaurant.restaurant_name)}">
                         <div class="card-body">
-                            <h5 class="card-title">${restaurant.name}</h5>
-                            <p class="card-text text-muted small">${restaurant.cuisine}</p>
+                            <h5 class="card-title">${capitalizeText(escapeHtml(restaurant.restaurant_name))}</h5>
+                            <p class="card-text text-muted small">${capitalizeText(escapeHtml(restaurant.cuisine_type))}</p>
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <div class="restaurant-rating">
-                                    <i class="fas fa-star"></i> ${restaurant.rating}
+                                    <i class="fas fa-star"></i> 4.5
                                 </div>
-                                <span class="text-muted">${restaurant.deliveryTime}</span>
+                                <span class="text-muted">25-35 min</span>
                             </div>
                             <button class="btn view-menu-btn w-100" data-id="${restaurant.id}">
                                 <i class="fas fa-utensils me-1"></i> View Menu
@@ -1117,6 +1115,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     showRestaurantMenu(restaurantId);
                 });
             });
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function capitalizeText(text) {
+            return String(text)
+                .toLowerCase()
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
         }
 
         // Load all menu items to the page
