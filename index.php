@@ -1,4 +1,5 @@
 <?php
+session_start();
 include 'config/connection.php';
 
 // Initialize message variables
@@ -154,6 +155,213 @@ if (isset($conn) && !$conn->connect_error) {
             $allRestaurants[] = $row;
         }
     }
+}
+
+// Fetch menu items from database
+$menuItems = [];
+if (isset($conn) && !$conn->connect_error) {
+    $query = "SELECT m.id, m.item_name, m.description, m.price, m.category, m.restaurant_id, m.item_image, r.restaurant_name
+              FROM menu_items m 
+              INNER JOIN restaurants r ON m.restaurant_id = r.id 
+              WHERE m.status = 'available' 
+              ORDER BY m.id DESC LIMIT 12";
+    
+    $result = $conn->query($query);
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $menuItems[] = [
+                'id' => $row['id'],
+                'name' => $row['item_name'],
+                'description' => $row['description'],
+                'price' => (int)$row['price'],
+                'category' => $row['category'],
+                'restaurantId' => $row['restaurant_id'],
+                'restaurantName' => $row['restaurant_name'],
+                'image' => !empty($row['item_image']) ? 'Assets/img/' . $row['item_image'] : 'https://via.placeholder.com/300x200?text=' . urlencode($row['item_name']),
+                'rating' => 4.5
+            ];
+        }
+    }
+}
+
+// Handle login via AJAX
+if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
+    $login_email = sanitize($_POST['login_email'] ?? '', 'email');
+    $login_password = $_POST['login_password'] ?? '';
+
+    if (!$login_email || !$login_password) {
+        echo json_encode(['success' => false, 'message' => 'Email and password required']);
+        exit;
+    }
+
+    if (!isset($conn) || $conn->connect_error) {
+        echo json_encode(['success' => false, 'message' => 'Database connection error']);
+        exit;
+    }
+
+    $sql = "SELECT id, username, email, phone_number, password FROM users WHERE email = ? LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    
+    if (!$stmt) {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
+        exit;
+    }
+
+    $stmt->bind_param('s', $login_email);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows === 0) {
+        echo json_encode(['success' => false, 'message' => 'Email not found']);
+        exit;
+    }
+
+    $user = $result->fetch_assoc();
+    $stmt->close();
+
+    if (!password_verify($login_password, $user['password'])) {
+        echo json_encode(['success' => false, 'message' => 'Invalid password']);
+        exit;
+    }
+
+    // Login successful
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['username'] = $user['username'];
+    $_SESSION['email'] = $user['email'];
+    $_SESSION['phone_number'] = $user['phone_number'];
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Login successful',
+        'user' => [
+            'id' => $user['id'],
+            'username' => $user['username'],
+            'email' => $user['email'],
+            'phone_number' => $user['phone_number']
+        ]
+    ]);
+    exit;
+}
+
+// Handle order placement
+if (isset($_POST['place_order'])) {
+    // Check if user is logged in via session
+    if (!isset($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Please login first']);
+        exit;
+    }
+
+    $user_id = $_SESSION['user_id'];
+    $cart_items = $_POST['cart_items'] ?? '[]';
+    $delivery_address = sanitize($_POST['delivery_address'] ?? '', 'string');
+    $payment_method = sanitize($_POST['payment_method'] ?? '', 'string');
+    $phone = sanitize($_POST['phone'] ?? '', 'string');
+    
+    if (!$delivery_address || !$payment_method || !$phone) {
+        echo json_encode(['success' => false, 'message' => 'All fields are required']);
+        exit;
+    }
+
+    if (!isset($conn) || $conn->connect_error) {
+        echo json_encode(['success' => false, 'message' => 'Database connection error']);
+        exit;
+    }
+
+    // Decode cart items
+    $items = json_decode($cart_items, true);
+    if (empty($items)) {
+        echo json_encode(['success' => false, 'message' => 'Cart is empty']);
+        exit;
+    }
+
+    // Calculate order total
+    $subtotal = 0;
+    $delivery_fee = 2500;
+    $tax_rate = 0.18;
+
+    foreach ($items as $item) {
+        $subtotal += $item['price'] * $item['quantity'];
+    }
+
+    $tax = $subtotal * $tax_rate;
+    $total_amount = $subtotal + $delivery_fee + $tax;
+
+    // Insert order into database
+    $order_status = 'pending';
+    $inserted_at = date('Y-m-d H:i:s');
+    
+    $order_sql = "INSERT INTO orders (user_id, total_amount, delivery_address, payment_method, phone, status, inserted_at) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?)";
+    $order_stmt = $conn->prepare($order_sql);
+    
+    if (!$order_stmt) {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
+        exit;
+    }
+
+    $order_stmt->bind_param('idsssss', $user_id, $total_amount, $delivery_address, $payment_method, $phone, $order_status, $inserted_at);
+    
+    if (!$order_stmt->execute()) {
+        echo json_encode(['success' => false, 'message' => 'Error placing order: ' . $order_stmt->error]);
+        $order_stmt->close();
+        exit;
+    }
+
+    $order_id = $order_stmt->insert_id;
+    $order_stmt->close();
+
+    // Insert order items
+    $items_sql = "INSERT INTO order_items (order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?)";
+    $items_stmt = $conn->prepare($items_sql);
+    
+    if (!$items_stmt) {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
+        exit;
+    }
+
+    foreach ($items as $item) {
+        $menu_item_id = $item['id'];
+        $quantity = $item['quantity'];
+        $item_price = $item['price'];
+        
+        $items_stmt->bind_param('iiii', $order_id, $menu_item_id, $quantity, $item_price);
+        if (!$items_stmt->execute()) {
+            echo json_encode(['success' => false, 'message' => 'Error adding items: ' . $items_stmt->error]);
+            $items_stmt->close();
+            exit;
+        }
+    }
+    $items_stmt->close();
+
+    // Generate QR code data - use a unique token for security
+    $qr_code = bin2hex(random_bytes(16)); // Generate unique QR code token
+    $status_update = 'confirmed'; // Update status to confirmed after payment
+    
+    // Update order with QR code
+    $qr_update_sql = "UPDATE orders SET qr_code = ?, status = ? WHERE id = ?";
+    $qr_stmt = $conn->prepare($qr_update_sql);
+    $qr_stmt->bind_param('ssi', $qr_code, $status_update, $order_id);
+    $qr_stmt->execute();
+    $qr_stmt->close();
+
+    // Generate order number
+    $order_number = str_pad($order_id, 6, '0', STR_PAD_LEFT);
+    
+    // Create QR code URL (using QR Server API)
+    $qr_url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qr_code);
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Order placed successfully!',
+        'order_id' => $order_id,
+        'order_number' => $order_number,
+        'total_amount' => $total_amount,
+        'qr_code' => $qr_code,
+        'qr_url' => $qr_url,
+        'delivery_address' => $delivery_address
+    ]);
+    exit;
 }
 ?>
 
@@ -693,68 +901,11 @@ if (isset($conn) && !$conn->connect_error) {
     
     <script>
 
-        const menuItems = [
-            {
-                id: 101,
-                name: "Nyama Choma Special",
-                description: "Grilled goat meat served with ugali and kachumbari",
-                price: 18000,
-                rating: 4.8,
-                category: "Traditional",
-                restaurantId: 1,
-                image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            },
-            {
-                id: 102,
-                name: "Cheeseburger Deluxe",
-                description: "Beef patty with cheddar, lettuce, tomato, and special sauce",
-                price: 12000,
-                rating: 4.6,
-                category: "Burger",
-                restaurantId: 2,
-                image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            },
-            {
-                id: 103,
-                name: "California Roll",
-                description: "Crab, avocado, and cucumber roll with sesame seeds",
-                price: 15000,
-                rating: 4.7,
-                category: "Sushi",
-                restaurantId: 3,
-                image: "https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            },
-            {
-                id: 104,
-                name: "Chicken Tacos",
-                description: "Soft tacos with grilled chicken, salsa, and fresh cilantro",
-                price: 10000,
-                rating: 4.5,
-                category: "Mexican",
-                restaurantId: 4,
-                image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            },
-            {
-                id: 105,
-                name: "Wali na Maharage",
-                description: "Rice with beans cooked in coconut milk, Tanzanian style",
-                price: 8000,
-                rating: 4.9,
-                category: "Traditional",
-                restaurantId: 1,
-                image: "https://images.unsplash.com/photo-1598866594230-a7c12756260f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            },
-            {
-                id: 106,
-                name: "Caesar Salad",
-                description: "Fresh romaine lettuce with croutons and caesar dressing",
-                price: 9000,
-                rating: 4.4,
-                category: "Salad",
-                restaurantId: null,
-                image: "https://images.unsplash.com/photo-1546793665-c74683f339c1?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-            }
-        ];
+        // Use actual menu items from database (PHP)
+        const menuItems = <?php echo json_encode($menuItems); ?>;
+        
+        // Use actual restaurants from database (PHP)
+        const restaurantsData = <?php echo json_encode($popularRestaurants); ?>;
 
         // Cart data
         let cart = [];
@@ -858,10 +1009,11 @@ if (isset($conn) && !$conn->connect_error) {
         // Update user interface based on login state
         function updateUserInterface() {
             if (currentUser) {
+                const displayName = currentUser.username || currentUser.email;
                 userDropdown.innerHTML = `
                     <div class="d-flex align-items-center">
-                        <div class="user-avatar me-2">${currentUser.firstName.charAt(0)}${currentUser.lastName.charAt(0)}</div>
-                        <span>${currentUser.firstName}</span>
+                        <div class="user-avatar me-2">${displayName.charAt(0).toUpperCase()}</div>
+                        <span>${displayName}</span>
                     </div>
                 `;
                 logoutBtn.classList.remove('d-none');
@@ -899,32 +1051,45 @@ if (isset($conn) && !$conn->connect_error) {
                 return;
             }
             
-            // Mock authentication - in real app, this would be an API call
-            if (password.length < 6) {
-                showAlert('Password must be at least 6 characters', 'danger');
-                return;
-            }
+            // Send login request to backend
+            const formData = new FormData();
+            formData.append('login_email', email);
+            formData.append('login_password', password);
             
-            // Create mock user
-            currentUser = {
-                firstName: 'John',
-                lastName: 'Doe',
-                email: email,
-                phone: '+255712345678'
-            };
-            
-            // Save to localStorage
-            localStorage.setItem('foodExpressUser', JSON.stringify(currentUser));
-            
-            // Update UI
-            updateUserInterface();
-            
-            // Close modal and show success
-            authModal.hide();
-            showAlert('Successfully logged in!', 'success');
-            
-            // Reset form
-            loginFormElement.reset();
+            fetch('index.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentUser = {
+                        id: data.user.id,
+                        username: data.user.username,
+                        email: data.user.email,
+                        phone: data.user.phone_number
+                    };
+                    
+                    // Save to localStorage
+                    localStorage.setItem('foodExpressUser', JSON.stringify(currentUser));
+                    
+                    // Update UI
+                    updateUserInterface();
+                    
+                    // Close modal and show success
+                    authModal.hide();
+                    showAlert('Successfully logged in!', 'success');
+                    
+                    // Reset form
+                    loginFormElement.reset();
+                } else {
+                    showAlert(data.message || 'Login failed', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Login error. Please try again.', 'danger');
+            });
         }
 
 
@@ -1193,25 +1358,32 @@ if (isset($conn) && !$conn->connect_error) {
 
         // Show restaurant-specific menu
         function showRestaurantMenu(restaurantId) {
-            const restaurant = restaurants.find(r => r.id === restaurantId);
+            // Find restaurant from restaurantsData
+            const restaurant = restaurantsData.find(r => r.id === restaurantId);
             
             if (!restaurant) return;
             
             // Set current restaurant view
-            currentRestaurantView = restaurant;
+            currentRestaurantView = {
+                id: restaurant.id,
+                name: restaurant.restaurant_name,
+                cuisine: restaurant.cuisine_type,
+                deliveryTime: '30-40 min',
+                rating: 4.5
+            };
             
             // Update restaurant menu header
-            restaurantNameDisplay.textContent = restaurant.name;
-            restaurantCuisineDisplay.textContent = restaurant.cuisine;
-            restaurantRatingDisplay.textContent = `${restaurant.rating} ★`;
-            restaurantDeliveryDisplay.textContent = restaurant.deliveryTime;
+            restaurantNameDisplay.textContent = currentRestaurantView.name;
+            restaurantCuisineDisplay.textContent = currentRestaurantView.cuisine;
+            restaurantRatingDisplay.textContent = `${currentRestaurantView.rating} ★`;
+            restaurantDeliveryDisplay.textContent = currentRestaurantView.deliveryTime;
             
             // Show restaurant menu header and hide regular sections
             restaurantMenuHeader.classList.add('active');
             document.getElementById('restaurants').style.display = 'none';
             document.getElementById('menu').style.display = 'none';
             restaurantMenuSection.style.display = 'block';
-            restaurantMenuTitle.textContent = `${restaurant.name} Menu`;
+            restaurantMenuTitle.textContent = `${currentRestaurantView.name} Menu`;
             
             // Load restaurant menu items
             loadRestaurantMenuItems(restaurantId);
@@ -1224,9 +1396,9 @@ if (isset($conn) && !$conn->connect_error) {
         function loadRestaurantMenuItems(restaurantId) {
             restaurantMenuContainer.innerHTML = '';
             
-            // Get menu items for this restaurant
+            // Get menu items for this restaurant from database items
             const restaurantMenuItems = menuItems.filter(item => 
-                item.restaurantId === restaurantId || restaurantId === item.restaurantId
+                item.restaurantId === restaurantId
             );
             
             if (restaurantMenuItems.length === 0) {
@@ -1459,23 +1631,294 @@ if (isset($conn) && !$conn->connect_error) {
                 'crdb': 'CRDB Bank'
             };
             
-            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) + deliveryFee;
-            const tax = total * taxRate;
-            const finalTotal = total + tax;
+            // Calculate totals
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const tax = subtotal * taxRate;
+            const total = subtotal + deliveryFee + tax;
             
-            // Simulate payment process
+            // Show delivery address prompt
+            const deliveryAddress = prompt('Enter your delivery address:');
+            if (!deliveryAddress) return;
+            
+            // Prepare order data
+            const formData = new FormData();
+            formData.append('place_order', '1');
+            formData.append('cart_items', JSON.stringify(cart));
+            formData.append('delivery_address', deliveryAddress);
+            formData.append('payment_method', paymentMethod);
+            formData.append('phone', currentUser.phone || '');
+            
+            // Show processing message
             showAlert(`Processing ${paymentMethods[paymentMethod]} payment...`, 'info');
             
+            // Send order to server
+            fetch('index.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Calculate totals for receipt
+                    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                    const tax = subtotal * taxRate;
+                    
+                    // Create receipt HTML with QR code
+                    let receiptHtml = `
+                        <div class="order-receipt" style="text-align: center; padding: 20px;">
+                            <h2 style="color: #667eea; margin-bottom: 20px;"><i class="fas fa-check-circle"></i> Order Confirmed!</h2>
+                            <p style="font-size: 20px; font-weight: bold;">Order #${data.order_number}</p>
+                            <hr>
+                            
+                            <div style="margin: 20px 0;">
+                                <p><strong>QR Code for Delivery</strong></p>
+                                <img src="${data.qr_url}" style="width: 200px; height: 200px; border: 3px solid #667eea; padding: 8px; border-radius: 10px; margin: 15px 0; background: white;">
+                                <p style="font-size: 11px; color: #666; font-family: monospace; word-break: break-all; background: #f5f5f5; padding: 8px; border-radius: 5px;">${data.qr_code}</p>
+                                <p style="font-size: 12px; color: #666; margin-top: 10px;"><i class="fas fa-info-circle"></i> Show this code to the delivery person</p>
+                            </div>
+                            
+                            <hr>
+                            <p><strong>Delivery Address</strong></p>
+                            <p style="color: #333;">${data.delivery_address}</p>
+                            
+                            <hr>
+                            <h5 style="color: #333; text-align: left;">Order Summary</h5>
+                    `;
+                    
+                    // Add cart items to receipt
+                    cart.forEach(item => {
+                        const itemTotal = item.price * item.quantity;
+                        receiptHtml += `
+                            <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; text-align: left;">
+                                <span>${item.name}</span>
+                                <span style="font-weight: 500;">${item.quantity} × ${formatCurrency(item.price)} = ${formatCurrency(itemTotal)}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    receiptHtml += `
+                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
+                                <span>Subtotal</span>
+                                <span>${formatCurrency(subtotal)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
+                                <span>Delivery Fee</span>
+                                <span>${formatCurrency(deliveryFee)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
+                                <span>Tax (18%)</span>
+                                <span>${formatCurrency(tax)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 12px 0; font-weight: bold; font-size: 16px; text-align: left; border-top: 2px solid #667eea; border-bottom: 2px solid #667eea;">
+                                <span>Total Amount</span>
+                                <span style="color: #667eea;">${formatCurrency(data.total_amount)}</span>
+                            </div>
+                            <p style="font-size: 13px; color: #666; margin-top: 15px;">
+                                <i class="fas fa-truck me-2"></i>Your food is being prepared and will be delivered soon!
+                            </p>
+                        </div>
+                    `;
+                    
+                    // Show SweetAlert with receipt
+                    Swal.fire({
+                        title: 'Order Successfully Placed!',
+                        html: receiptHtml,
+                        icon: 'success',
+                        confirmButtonColor: '#667eea',
+                        confirmButtonText: 'Done',
+                        width: '600px',
+                        showCancelButton: true,
+                        cancelButtonText: 'Print Receipt',
+                        cancelButtonColor: '#6c757d'
+                    }).then((result) => {
+                        if (result.isDismissed && result.dismiss === Swal.DismissReason.cancel) {
+                            printReceipt(data.order_number, data.qr_url, data.qr_code, data.delivery_address, subtotal, tax, data.total_amount, cart);
+                        }
+                        // Clear cart
+                        cart = [];
+                        updateCartCount();
+                        updateCartDisplay();
+                        toggleCart();
+                    });
+                } else {
+                    showAlert(data.message || 'Error placing order', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Error placing order. Please try again.', 'danger');
+            });
+        }
+        // Print receipt function
+        function printReceipt(orderNumber, qrUrl, qrCode, address, subtotal, tax, total, items) {
+            const printWindow = window.open('', '', 'height=700,width=600');
+            
+            let itemsHtml = '';
+            items.forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                itemsHtml += `
+                    <tr>
+                        <td style="text-align: left;">${item.name}</td>
+                        <td style="text-align: center;">${item.quantity}</td>
+                        <td style="text-align: right;">TZS ${item.price.toLocaleString()}</td>
+                        <td style="text-align: right;">TZS ${itemTotal.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+            const receiptContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Order Receipt #${orderNumber}</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            max-width: 400px;
+                            margin: 0 auto;
+                            padding: 20px;
+                            color: #333;
+                        }
+                        .receipt-header {
+                            text-align: center;
+                            margin-bottom: 20px;
+                            border-bottom: 2px solid #333;
+                            padding-bottom: 15px;
+                        }
+                        .receipt-header h1 {
+                            margin: 0 0 5px 0;
+                            font-size: 24px;
+                        }
+                        .receipt-header p {
+                            margin: 3px 0;
+                            font-size: 12px;
+                        }
+                        .qr-section {
+                            text-align: center;
+                            margin: 20px 0;
+                            padding: 15px 0;
+                            border-top: 1px dashed #999;
+                            border-bottom: 1px dashed #999;
+                        }
+                        .qr-code-img {
+                            width: 150px;
+                            height: 150px;
+                        }
+                        .qr-code-text {
+                            font-size: 10px;
+                            margin-top: 5px;
+                            word-break: break-all;
+                            font-family: monospace;
+                        }
+                        table {
+                            width: 100%;
+                            margin: 15px 0;
+                            border-collapse: collapse;
+                        }
+                        th {
+                            text-align: left;
+                            border-bottom: 1px solid #999;
+                            padding: 5px 0;
+                            font-weight: bold;
+                            font-size: 12px;
+                        }
+                        td {
+                            padding: 5px 0;
+                            font-size: 12px;
+                        }
+                        .total-row {
+                            font-weight: bold;
+                            border-top: 2px solid #333;
+                            border-bottom: 2px solid #333;
+                            padding: 8px 0;
+                        }
+                        .address-section {
+                            margin: 15px 0;
+                            padding: 10px;
+                            background: #f5f5f5;
+                            border-radius: 5px;
+                            font-size: 12px;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 20px;
+                            font-size: 11px;
+                            color: #666;
+                            border-top: 1px dashed #999;
+                            padding-top: 10px;
+                        }
+                        @media print {
+                            body { margin: 0; padding: 10px; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="receipt-header">
+                        <h1>FoodChap</h1>
+                        <p>Order Receipt</p>
+                        <p>Order #${orderNumber}</p>
+                    </div>
+                    
+                    <div class="qr-section">
+                        <p><strong>Delivery QR Code</strong></p>
+                        <img src="${qrUrl}" class="qr-code-img" alt="QR Code">
+                        <div class="qr-code-text">${qrCode}</div>
+                    </div>
+                    
+                    <div class="address-section">
+                        <strong>Delivery Address</strong><br>
+                        ${address}
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="text-align: left;">Item</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Price</th>
+                                <th style="text-align: right;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                    
+                    <div style="text-align: right;">
+                        <div style="padding: 5px 0; font-size: 12px;">
+                            <span style="display: inline-block; width: 150px; text-align: left;">Subtotal:</span>
+                            <span>TZS ${subtotal.toLocaleString()}</span>
+                        </div>
+                        <div style="padding: 5px 0; font-size: 12px;">
+                            <span style="display: inline-block; width: 150px; text-align: left;">Delivery Fee:</span>
+                            <span>TZS 2,500</span>
+                        </div>
+                        <div style="padding: 5px 0; font-size: 12px;">
+                            <span style="display: inline-block; width: 150px; text-align: left;">Tax (18%):</span>
+                            <span>TZS ${tax.toLocaleString()}</span>
+                        </div>
+                        <div class="total-row" style="padding: 8px 0;">
+                            <span style="display: inline-block; width: 150px; text-align: left;">TOTAL:</span>
+                            <span>TZS ${total.toLocaleString()}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Thank you for your order!</p>
+                        <p>Thank you for ordering with FoodChap Tanzania</p>
+                        <p>${new Date().toLocaleString()}</p>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            printWindow.document.write(receiptContent);
+            printWindow.document.close();
+            
+            // Print after a short delay to ensure content loads
             setTimeout(() => {
-                const orderNumber = Math.floor(100000 + Math.random() * 900000);
-                showAlert(`Order #${orderNumber} confirmed! Your food will be delivered soon.`, 'success');
-                
-                // Clear cart
-                cart = [];
-                updateCartCount();
-                updateCartDisplay();
-                toggleCart();
-            }, 2000);
+                printWindow.print();
+            }, 250);
         }
     </script>
 </body>
