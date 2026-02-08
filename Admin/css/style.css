@@ -518,3 +518,234 @@ body {
         display: none;
     }
 }
+
+        #content {
+            margin-left: 250px;
+            padding: 20px;
+            transition: margin-left 0.3s ease;
+        }
+
+        @media (max-width: 992px) {
+            #content {
+                margin-left: 0;
+                padding: 15px;
+            }
+        }
+
+        .page-header {
+            background: white;
+            border-radius: var(--radius);
+            padding: 20px 25px;
+            margin-bottom: 25px;
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .page-header h1 {
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 5px;
+            font-size: 28px;
+        }
+
+        .dashboard-card {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 25px;
+            overflow: hidden;
+            border: none;
+        }
+
+        .dashboard-card .card-header {
+            background: var(--light-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 18px 25px;
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--dark-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dashboard-card .card-body {
+            padding: 0;
+        }
+
+        .table-responsive {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .table {
+            margin-bottom: 0;
+        }
+
+        .table thead th {
+            background: var(--light-color);
+            border-bottom: 2px solid var(--border-color);
+            padding: 16px 20px;
+            font-weight: 600;
+            color: var(--dark-color);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table tbody td {
+            padding: 16px 20px;
+            vertical-align: middle;
+            border-bottom: 1px solid #eee;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .table tbody tr:hover {
+            background-color: rgba(67, 97, 238, 0.05);
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 20px;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .status-pending { background-color: var(--warning-color); color: #212529; }
+        .status-confirmed { background-color: var(--info-color); color: white; }
+        .status-preparing { background-color: #4361ee; color: white; }
+        .status-delivered { background-color: var(--success-color); color: white; }
+        .status-cancelled { background-color: var(--danger-color); color: white; }
+
+        .btn-admin {
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            border: none;
+            transition: all 0.3s ease;
+        }
+
+        .btn-admin-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-admin-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-sm {
+            padding: 5px 15px;
+            font-size: 13px;
+            border-radius: 6px;
+        }
+
+        .admin-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            background: white;
+            padding: 15px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .admin-tab {
+            padding: 10px 20px;
+            background: var(--light-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--secondary-color);
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .admin-tab:hover {
+            background: #e9ecef;
+        }
+
+        .admin-tab.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .search-box {
+            position: relative;
+            width: 300px;
+        }
+
+        .search-box input {
+            padding-left: 40px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            height: 40px;
+            width: 100%;
+        }
+
+        .admin-modal .modal-content {
+            border-radius: var(--radius);
+            border: none;
+        }
+
+        .admin-modal .modal-header {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            color: white;
+            border-bottom: none;
+            padding: 20px 30px;
+        }
+
+        .admin-modal .modal-body {
+            padding: 30px;
+        }
+
+        .order-details-card {
+            background: var(--light-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .order-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .form-control-admin {
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 10px 15px;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .toast-success {
+            border-left-color: var(--success-color);
+        }
+
+        .toast-error {
+            border-left-color: var(--danger-color);
+        }

@@ -9,10 +9,15 @@
         <a href="index.php" class="sidebar-item active" data-section="dashboard">
             <i class="fas fa-tachometer-alt"></i> Dashboard
         </a>
-
+<?php
+include '../config/connection.php';
+$sql = "SELECT COUNT(*) AS pending_count FROM orders WHERE status='pending'";
+$result = $conn->query($sql);
+$row = $result->fetch_assoc();
+?>
         <a href="orders.php" class="sidebar-item" data-section="orders">
             <i class="fas fa-shopping-cart"></i> Orders
-            <span class="badge bg-danger float-end mt-1" id="pendingOrdersBadge">5</span>
+            <span class="badge bg-danger float-end mt-1" id="pendingOrdersBadge"><?php echo $row['pending_count']; ?></span>
         </a>
 
         <a href="restaurant.php" class="sidebar-item" data-section="restaurants">

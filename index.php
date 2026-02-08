@@ -245,125 +245,141 @@ if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
 }
 
 // Handle order placement
-if (isset($_POST['place_order'])) {
-    // Check if user is logged in via session
-    if (!isset($_SESSION['user_id'])) {
-        echo json_encode(['success' => false, 'message' => 'Please login first']);
-        exit;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
+
+    $items = json_decode($_POST['cart_items'] ?? '[]', true);
+    $address = $_POST['delivery_address'] ?? '';
+    $method  = $_POST['payment_method'] ?? '';
+    $phone   = $_POST['phone'] ?? '';
+
+    if (!$items || !$address || !$method || !$phone) {
+        die(json_encode(["success"=>false,"msg"=>"Missing fields"]));
     }
 
-    $user_id = $_SESSION['user_id'];
-    $cart_items = $_POST['cart_items'] ?? '[]';
-    $delivery_address = sanitize($_POST['delivery_address'] ?? '', 'string');
-    $payment_method = sanitize($_POST['payment_method'] ?? '', 'string');
-    $phone = sanitize($_POST['phone'] ?? '', 'string');
-    
-    if (!$delivery_address || !$payment_method || !$phone) {
-        echo json_encode(['success' => false, 'message' => 'All fields are required']);
-        exit;
-    }
+    $conn->begin_transaction();
 
-    if (!isset($conn) || $conn->connect_error) {
-        echo json_encode(['success' => false, 'message' => 'Database connection error']);
-        exit;
-    }
+    try {
 
-    // Decode cart items
-    $items = json_decode($cart_items, true);
-    if (empty($items)) {
-        echo json_encode(['success' => false, 'message' => 'Cart is empty']);
-        exit;
-    }
-
-    // Calculate order total
-    $subtotal = 0;
-    $delivery_fee = 2500;
-    $tax_rate = 0.18;
-
-    foreach ($items as $item) {
-        $subtotal += $item['price'] * $item['quantity'];
-    }
-
-    $tax = $subtotal * $tax_rate;
-    $total_amount = $subtotal + $delivery_fee + $tax;
-
-    // Insert order into database
-    $order_status = 'pending';
-    $inserted_at = date('Y-m-d H:i:s');
-    
-    $order_sql = "INSERT INTO orders (user_id, total_amount, delivery_address, payment_method, phone, status, inserted_at) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?)";
-    $order_stmt = $conn->prepare($order_sql);
-    
-    if (!$order_stmt) {
-        echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
-        exit;
-    }
-
-    $order_stmt->bind_param('idsssss', $user_id, $total_amount, $delivery_address, $payment_method, $phone, $order_status, $inserted_at);
-    
-    if (!$order_stmt->execute()) {
-        echo json_encode(['success' => false, 'message' => 'Error placing order: ' . $order_stmt->error]);
-        $order_stmt->close();
-        exit;
-    }
-
-    $order_id = $order_stmt->insert_id;
-    $order_stmt->close();
-
-    // Insert order items
-    $items_sql = "INSERT INTO order_items (order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?)";
-    $items_stmt = $conn->prepare($items_sql);
-    
-    if (!$items_stmt) {
-        echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
-        exit;
-    }
-
-    foreach ($items as $item) {
-        $menu_item_id = $item['id'];
-        $quantity = $item['quantity'];
-        $item_price = $item['price'];
-        
-        $items_stmt->bind_param('iiii', $order_id, $menu_item_id, $quantity, $item_price);
-        if (!$items_stmt->execute()) {
-            echo json_encode(['success' => false, 'message' => 'Error adding items: ' . $items_stmt->error]);
-            $items_stmt->close();
-            exit;
+        // totals
+        $subtotal = 0;
+        foreach ($items as $i) {
+            $subtotal += $i['price'] * $i['quantity'];
         }
+
+        $delivery = 2000;
+        $tax = $subtotal * 0.18;
+        $total = $subtotal + $delivery + $tax;
+
+        $now = date("Y-m-d H:i:s");
+        $expires = date("Y-m-d H:i:s", strtotime("+2 hours"));
+
+        // insert order
+        $stmt = $conn->prepare(" INSERT INTO orders
+        (user_id,total_amount,delivery_address,payment_method,phone,status,inserted_at,expires_at)
+        VALUES (?,?,?,?,?,'confirmed',?,?)
+        ");
+
+        $stmt->bind_param(
+            "idsssss",
+            $_SESSION['user_id'],
+            $total, $address, $method,  $phone,  $now,  $expires
+        );
+
+        $stmt->execute();
+        $order_id = $stmt->insert_id;
+
+        // insert items
+        $item_stmt = $conn->prepare("
+        INSERT INTO order_items (order_id,menu_item_id,quantity,price)
+        VALUES (?,?,?,?)
+        ");
+
+        foreach ($items as $i) {
+            $item_stmt->bind_param(
+                "iiid",
+                $order_id,
+                $i['id'],
+                $i['quantity'],
+                $i['price']
+            );
+            $item_stmt->execute();
+        }
+
+        // generate secure token
+        $token = bin2hex(random_bytes(16));
+
+        $conn->query("
+        UPDATE orders SET qr_token='$token'
+        WHERE id=$order_id
+        ");
+
+        $conn->commit();
+
+        // QR link
+        $verify = "http://food.local/Delivery/verify.php?order=$order_id&token=$token";
+
+        $qr = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
+        . urlencode($verify);
+
+        echo json_encode([
+            "success"=>true,
+            "order_id"=>$order_id,
+            "qr"=>$qr,
+            "verify"=>$verify,
+            "expires"=>$expires
+        ]);
+
+        exit;
+
+    } catch(Exception $e) {
+
+        $conn->rollback();
+        echo json_encode(["success"=>false,"msg"=>"DB error"]);
+        exit;
     }
-    $items_stmt->close();
+}
 
-    // Generate QR code data - use a unique token for security
-    $qr_code = bin2hex(random_bytes(16)); // Generate unique QR code token
-    $status_update = 'confirmed'; // Update status to confirmed after payment
+// Function to get user orders with item details
+function getUserOrders($conn, $user_id) {
+    $orders = [];
     
-    // Update order with QR code
-    $qr_update_sql = "UPDATE orders SET qr_code = ?, status = ? WHERE id = ?";
-    $qr_stmt = $conn->prepare($qr_update_sql);
-    $qr_stmt->bind_param('ssi', $qr_code, $status_update, $order_id);
-    $qr_stmt->execute();
-    $qr_stmt->close();
-
-    // Generate order number
-    $order_number = str_pad($order_id, 6, '0', STR_PAD_LEFT);
+    $query = " SELECT o.*,COUNT(oi.id) as item_count,SUM(oi.quantity) as total_items,GROUP_CONCAT(DISTINCT r.restaurant_name SEPARATOR ', ') as restaurant_names
+        FROM orders o
+        LEFT JOIN order_items oi ON o.id = oi.order_id 
+        LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
+        LEFT JOIN restaurants r ON mi.restaurant_id = r.id WHERE o.user_id = ? GROUP BY o.id ORDER BY o.inserted_at DESC LIMIT 20";
     
-    // Create QR code URL (using QR Server API)
-    $qr_url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qr_code);
-
-    echo json_encode([
-        'success' => true,
-        'message' => 'Order placed successfully!',
-        'order_id' => $order_id,
-        'order_number' => $order_number,
-        'total_amount' => $total_amount,
-        'qr_code' => $qr_code,
-        'qr_url' => $qr_url,
-        'delivery_address' => $delivery_address
-    ]);
-    exit;
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    while ($row = $result->fetch_assoc()) {
+        // Get order items for each order
+        $items_query = " SELECT oi.*,mi.item_name,mi.description,mi.item_image,mi.category,r.restaurant_name
+            FROM order_items oi
+            JOIN menu_items mi ON oi.menu_item_id = mi.id
+            JOIN restaurants r ON mi.restaurant_id = r.id
+            WHERE oi.order_id = ?";
+        
+        $items_stmt = $conn->prepare($items_query);
+        $items_stmt->bind_param("i", $row['id']);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        
+        $order_items = [];
+        while ($item_row = $items_result->fetch_assoc()) {
+            $order_items[] = $item_row;
+        }
+        
+        $row['items'] = $order_items;
+        $orders[] = $row;
+    }
+    
+    return $orders;
 }
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -388,7 +404,8 @@ if (isset($_POST['place_order'])) {
                 icon: <?php echo $success ? "'success'" : "'error'"; ?>,
                 title: <?php echo $success ? "'Success!'" : "'Registration Failed'"; ?>,
                 text: <?php echo json_encode($message); ?>,
-                confirmButtonColor: <?php echo $success ? "'#28a745'" : "'#dc3545'"; ?>
+                confirmButtonColor: <?php echo $success ? "'#28a745'" : "'#dc3545'"; ?>,
+                time: 5000,
             }).then(() => {
                 <?php if ($success): ?>
                     // Reset form and close modal on success
@@ -919,6 +936,7 @@ if (isset($_POST['place_order'])) {
         let currentUser = null;
 
         // DOM elements
+        document.getElementById('viewOrders')?.addEventListener('click', handleViewOrders);
         const cartSidebar = document.getElementById('cartSidebar');
         const cartOverlay = document.getElementById('cartOverlay');
         const cartToggle = document.getElementById('cartToggle');
@@ -1009,7 +1027,7 @@ if (isset($_POST['place_order'])) {
         // Update user interface based on login state
         function updateUserInterface() {
             if (currentUser) {
-                const displayName = currentUser.username || currentUser.email;
+                const displayName = currentUser.username;
                 userDropdown.innerHTML = `
                     <div class="d-flex align-items-center">
                         <div class="user-avatar me-2">${displayName.charAt(0).toUpperCase()}</div>
@@ -1194,25 +1212,403 @@ if (isset($_POST['place_order'])) {
             showAlert('Successfully logged out', 'success');
         }
 
+        // Create the orders modal HTML 
+function createOrdersModal() {
+    if (document.getElementById('ordersModal')) return;
+    
+    const modalHTML = `
+    <div class="modal fade" id="ordersModal" tabindex="-1" aria-labelledby="ordersModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="ordersModalLabel">
+                        <i class="fas fa-shopping-bag me-2"></i>My Orders
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="loading text-center py-5" id="ordersLoading">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Loading your orders...</p>
+                    </div>
+                    
+                    <div id="ordersContainer" style="display: none;">
+                        <div class="container-fluid py-3">
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <h6 class="mb-0">Filter Orders</h6>
+                                                <div class="btn-group" role="group">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm active" data-filter="all">All</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" data-filter="active">Active</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" data-filter="delivered">Delivered</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" data-filter="cancelled">Cancelled</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div id="ordersList" class="row">
+                                <!-- Orders will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="noOrders" class="text-center py-5" style="display: none;">
+                        <div class="empty-state py-5">
+                            <i class="fas fa-shopping-bag fa-4x text-muted mb-4"></i>
+                            <h4>No Orders Yet</h4>
+                            <p class="text-muted mb-4">You haven't placed any orders yet.</p>
+                            <button class="btn btn-primary" data-bs-dismiss="modal">
+                                <i class="fas fa-utensils me-2"></i>Browse Restaurants
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+// Initialize the modal when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    createOrdersModal();
+});
+
+// Main function to show orders
+function showUserOrders() {
+    createOrdersModal(); 
+    
+    const modal = new bootstrap.Modal(document.getElementById('ordersModal'));
+    
+    // Reset display
+    document.getElementById('ordersLoading').style.display = 'flex';
+    document.getElementById('ordersLoading').style.flexDirection = 'column';
+    document.getElementById('ordersLoading').style.alignItems = 'center';
+    document.getElementById('ordersContainer').style.display = 'none';
+    document.getElementById('noOrders').style.display = 'none';
+    
+    modal.show();
+    
+    // Fetch user orders
+    fetchUserOrders();
+}
+
+// Function to fetch user orders
+function fetchUserOrders() {
+    fetch('get_user_orders.php', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin' 
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        document.getElementById('ordersLoading').style.display = 'none';
+        
+        if (data.success && data.orders && data.orders.length > 0) {
+            displayOrders(data.orders);
+            setupFilterButtons();
+        } else {
+            document.getElementById('noOrders').style.display = 'block';
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching orders:', error);
+        document.getElementById('ordersLoading').style.display = 'none';
+        document.getElementById('ordersContainer').style.display = 'none';
+        document.getElementById('noOrders').style.display = 'block';
+        
+        // Show error in no orders section
+        const noOrdersEl = document.getElementById('noOrders');
+        noOrdersEl.innerHTML = `
+            <div class="empty-state py-5">
+                <i class="fas fa-exclamation-triangle fa-4x text-danger mb-4"></i>
+                <h4>Error Loading Orders</h4>
+                <p class="text-muted mb-4">Unable to load your orders. Please try again.</p>
+                <button class="btn btn-primary" onclick="showUserOrders()">
+                    <i class="fas fa-redo me-2"></i>Retry
+                </button>
+            </div>
+        `;
+    });
+}
+
+// Function to display orders
+function displayOrders(orders) {
+    const ordersList = document.getElementById('ordersList');
+    ordersList.innerHTML = '';
+    
+    // Sort orders by date (newest first)
+    orders.sort((a, b) => new Date(b.inserted_at) - new Date(a.inserted_at));
+    
+    // Count orders by status
+    const statusCounts = {
+        all: orders.length,
+        active: orders.filter(o => ['confirmed', 'preparing', 'on_the_way'].includes(o.status)).length,
+        delivered: orders.filter(o => o.status === 'delivered').length,
+        cancelled: orders.filter(o => o.status === 'cancelled').length
+    };
+    
+    // Update filter buttons count
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+        const filter = btn.getAttribute('data-filter');
+        const count = statusCounts[filter] || 0;
+        btn.innerHTML = `${filter.charAt(0).toUpperCase() + filter.slice(1)} <span class="badge bg-primary ms-1">${count}</span>`;
+    });
+    
+    // Display each order
+    orders.forEach(order => {
+        const orderEl = createOrderElement(order);
+        ordersList.appendChild(orderEl);
+    });
+    
+    document.getElementById('ordersContainer').style.display = 'block';
+}
+
+// Function to create order element
+function createOrderElement(order) {
+    const orderDate = new Date(order.inserted_at);
+    const expiresDate = new Date(order.expires_at);
+    const now = new Date();
+    const isExpired = expiresDate < now;
+    
+    
+    const statusConfig = {
+        'confirmed': { class: 'bg-primary', icon: 'fas fa-clock' },
+        'preparing': { class: 'bg-info', icon: 'fas fa-utensils' },
+        'on_the_way': { class: 'bg-warning', icon: 'fas fa-motorcycle' },
+        'delivered': { class: 'bg-success', icon: 'fas fa-check-circle' },
+        'cancelled': { class: 'bg-danger', icon: 'fas fa-times-circle' }
+    };
+    
+    const statusInfo = statusConfig[order.status] || { class: 'bg-secondary', icon: 'fas fa-question' };
+    
+    // Calculate totals
+    const subtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const delivery = 20.00; 
+    const tax = subtotal * 0.18;
+    const total = subtotal + delivery + tax;
+    
+    const col = document.createElement('div');
+    col.className = 'col-lg-6 mb-4 order-item';
+    col.setAttribute('data-status', order.status);
+    col.setAttribute('data-expired', isExpired);
+    
+    col.innerHTML = `
+        <div class="card h-100 border-0 shadow-sm hover-lift">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-0 fw-bold">Order #${order.id}</h6>
+                    <small class="text-muted">${orderDate.toLocaleDateString()} • ${orderDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+                </div>
+                <div>
+                    <span class="badge ${statusInfo.class}">
+                        <i class="${statusInfo.icon} me-1"></i>${order.status.replace('_', ' ')}
+                    </span>
+                    ${isExpired ? '<span class="badge bg-dark ms-1">Expired</span>' : ''}
+                </div>
+            </div>
+            
+            <div class="card-body">
+                <!-- Restaurant Info -->
+                <div class="restaurant-info mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${order.restaurant_names || 'Restaurant'}</h6>
+                            <small class="text-muted">
+                                <i class="fas fa-map-marker-alt me-1"></i>
+                                ${order.delivery_address ? escapeHtml(order.delivery_address.substring(0, 50)) + (order.delivery_address.length > 50 ? '...' : '') : 'No address'}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Order Items -->
+                <div class="order-items mb-3">
+                    <h6 class="border-bottom pb-2">Items (${order.total_items || order.items.reduce((sum, item) => sum + item.quantity, 0)})</h6>
+                    <div class="items-list" style="max-height: 200px; overflow-y: auto;">
+                        ${order.items.slice(0, 3).map(item => `
+                            <div class="d-flex align-items-center py-2 border-bottom">
+                                <img src="Assets/img/${escapeHtml(item.item_image || 'default-food.jpg')}" 
+                                     class="rounded me-3" 
+                                     style="width: 50px; height: 50px; object-fit: cover;" 
+                                     alt="${escapeHtml(item.item_name)}">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between">
+                                        <span class="fw-medium">${capitalizeText(escapeHtml(item.item_name))}</span>
+                                        <span class="text-success">TZS${(item.price * item.quantity).toFixed(2)}</span>
+                                    </div>
+                                    <small class="text-muted">Qty: ${item.quantity}</small>
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        ${order.items.length > 3 ? `
+                            <div class="text-center py-2">
+                                <small class="text-muted">+${order.items.length - 3} more items</small>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <!-- Order Summary -->
+                <div class="order-summary bg-light p-3 rounded">
+                    <div class="row">
+                        <div class="col-6">
+                            <small class="text-muted d-block">Payment</small>
+                            <span class="fw-medium">${order.payment_method}</span>
+                        </div>
+                        <div class="col-6 text-end">
+                            <small class="text-muted d-block">Total Amount</small>
+                            <span class="fw-bold text-success">TZS${parseFloat(order.total_amount).toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-footer bg-white border-top">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        ${isExpired ? 
+                            `<i class="fas fa-exclamation-triangle text-danger me-1"></i>Order expired` : 
+                            `<i class="fas fa-clock me-1"></i>Expires: ${expiresDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
+                    </small>
+                    <div>
+                        ${order.qr_token && !isExpired ? `
+                            <button class="btn btn-sm btn-outline-primary me-2" onclick="showQRCode(${order.id})">
+                                <i class="fas fa-qrcode me-1"></i>QR Code
+                            </button>
+                        ` : ''}
+                        
+                        <button class="btn btn-sm btn-outline-secondary" onclick="viewOrderDetails(${order.id})">
+                            <i class="fas fa-eye me-1"></i>Details
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+// Function to setup filter buttons
+function setupFilterButtons() {
+    const filterButtons = document.querySelectorAll('[data-filter]');
+    const orderItems = document.querySelectorAll('.order-item');
+    
+    filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            const filter = this.getAttribute('data-filter');
+            
+            // Filter orders
+            orderItems.forEach(item => {
+                const status = item.getAttribute('data-status');
+                const isExpired = item.getAttribute('data-expired') === 'true';
+                
+                let show = false;
+                
+                switch(filter) {
+                    case 'all':
+                        show = true;
+                        break;
+                    case 'active':
+                        show = ['confirmed', 'preparing', 'on_the_way'].includes(status) && !isExpired;
+                        break;
+                    case 'delivered':
+                        show = status === 'delivered';
+                        break;
+                    case 'cancelled':
+                        show = status === 'cancelled';
+                        break;
+                }
+                
+                item.style.display = show ? 'block' : 'none';
+            });
+        });
+    });
+}
+
+// function for order details modal
+function viewOrderDetails(orderId) {
+    
+    fetch(`get_order_details.php?order_id=${orderId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show order details in a modal
+                alert(`Detailed view for Order #${orderId}\nTotal: TZS${data.order.total_amount}\nStatus: ${data.order.status}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Unable to load order details');
+        });
+}
+
+// QR Code modal function
+function showQRCode(orderId) {
+    fetch(`get_order_qr.php?order_id=${orderId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.qr_url) {
+                const qrModal = new bootstrap.Modal(document.createElement('div'));
+                qrModal._element.innerHTML = `
+                    <div class="modal-dialog modal-sm">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">QR Code - Order #${orderId}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center">
+                                <img src="${data.qr_url}" class="img-fluid mb-3" alt="QR Code">
+                                <p class="small text-muted">Show this to the delivery person</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                qrModal.show();
+            }
+        });
+}
         // Handle view orders
         function handleViewOrders(e) {
             e.preventDefault();
             if (!currentUser) {
-                authModal.show();
-                return;
+                 authModal.show();
+                  return;
             }
-            showAlert('Your orders will be displayed here', 'info');
+    
+        // Initialize and show orders modal
+        showUserOrders();
         }
 
         // Handle view profile
-        function handleViewProfile(e) {
-            e.preventDefault();
-            if (!currentUser) {
-                authModal.show();
-                return;
-            }
-            showAlert('Your profile information will be displayed here', 'info');
-        }
+        
 
         // Show alert message
         function showAlert(message, type) {
@@ -1655,271 +2051,9 @@ if (isset($_POST['place_order'])) {
             fetch('index.php', {
                 method: 'POST',
                 body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Calculate totals for receipt
-                    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                    const tax = subtotal * taxRate;
-                    
-                    // Create receipt HTML with QR code
-                    let receiptHtml = `
-                        <div class="order-receipt" style="text-align: center; padding: 20px;">
-                            <h2 style="color: #667eea; margin-bottom: 20px;"><i class="fas fa-check-circle"></i> Order Confirmed!</h2>
-                            <p style="font-size: 20px; font-weight: bold;">Order #${data.order_number}</p>
-                            <hr>
-                            
-                            <div style="margin: 20px 0;">
-                                <p><strong>QR Code for Delivery</strong></p>
-                                <img src="${data.qr_url}" style="width: 200px; height: 200px; border: 3px solid #667eea; padding: 8px; border-radius: 10px; margin: 15px 0; background: white;">
-                                <p style="font-size: 11px; color: #666; font-family: monospace; word-break: break-all; background: #f5f5f5; padding: 8px; border-radius: 5px;">${data.qr_code}</p>
-                                <p style="font-size: 12px; color: #666; margin-top: 10px;"><i class="fas fa-info-circle"></i> Show this code to the delivery person</p>
-                            </div>
-                            
-                            <hr>
-                            <p><strong>Delivery Address</strong></p>
-                            <p style="color: #333;">${data.delivery_address}</p>
-                            
-                            <hr>
-                            <h5 style="color: #333; text-align: left;">Order Summary</h5>
-                    `;
-                    
-                    // Add cart items to receipt
-                    cart.forEach(item => {
-                        const itemTotal = item.price * item.quantity;
-                        receiptHtml += `
-                            <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; text-align: left;">
-                                <span>${item.name}</span>
-                                <span style="font-weight: 500;">${item.quantity} × ${formatCurrency(item.price)} = ${formatCurrency(itemTotal)}</span>
-                            </div>
-                        `;
-                    });
-                    
-                    receiptHtml += `
-                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
-                                <span>Subtotal</span>
-                                <span>${formatCurrency(subtotal)}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
-                                <span>Delivery Fee</span>
-                                <span>${formatCurrency(deliveryFee)}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 10px 0; text-align: left;">
-                                <span>Tax (18%)</span>
-                                <span>${formatCurrency(tax)}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 12px 0; font-weight: bold; font-size: 16px; text-align: left; border-top: 2px solid #667eea; border-bottom: 2px solid #667eea;">
-                                <span>Total Amount</span>
-                                <span style="color: #667eea;">${formatCurrency(data.total_amount)}</span>
-                            </div>
-                            <p style="font-size: 13px; color: #666; margin-top: 15px;">
-                                <i class="fas fa-truck me-2"></i>Your food is being prepared and will be delivered soon!
-                            </p>
-                        </div>
-                    `;
-                    
-                    // Show SweetAlert with receipt
-                    Swal.fire({
-                        title: 'Order Successfully Placed!',
-                        html: receiptHtml,
-                        icon: 'success',
-                        confirmButtonColor: '#667eea',
-                        confirmButtonText: 'Done',
-                        width: '600px',
-                        showCancelButton: true,
-                        cancelButtonText: 'Print Receipt',
-                        cancelButtonColor: '#6c757d'
-                    }).then((result) => {
-                        if (result.isDismissed && result.dismiss === Swal.DismissReason.cancel) {
-                            printReceipt(data.order_number, data.qr_url, data.qr_code, data.delivery_address, subtotal, tax, data.total_amount, cart);
-                        }
-                        // Clear cart
-                        cart = [];
-                        updateCartCount();
-                        updateCartDisplay();
-                        toggleCart();
-                    });
-                } else {
-                    showAlert(data.message || 'Error placing order', 'danger');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showAlert('Error placing order. Please try again.', 'danger');
-            });
+            }) 
         }
-        // Print receipt function
-        function printReceipt(orderNumber, qrUrl, qrCode, address, subtotal, tax, total, items) {
-            const printWindow = window.open('', '', 'height=700,width=600');
-            
-            let itemsHtml = '';
-            items.forEach(item => {
-                const itemTotal = item.price * item.quantity;
-                itemsHtml += `
-                    <tr>
-                        <td style="text-align: left;">${item.name}</td>
-                        <td style="text-align: center;">${item.quantity}</td>
-                        <td style="text-align: right;">TZS ${item.price.toLocaleString()}</td>
-                        <td style="text-align: right;">TZS ${itemTotal.toLocaleString()}</td>
-                    </tr>
-                `;
-            });
 
-            const receiptContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Order Receipt #${orderNumber}</title>
-                    <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            max-width: 400px;
-                            margin: 0 auto;
-                            padding: 20px;
-                            color: #333;
-                        }
-                        .receipt-header {
-                            text-align: center;
-                            margin-bottom: 20px;
-                            border-bottom: 2px solid #333;
-                            padding-bottom: 15px;
-                        }
-                        .receipt-header h1 {
-                            margin: 0 0 5px 0;
-                            font-size: 24px;
-                        }
-                        .receipt-header p {
-                            margin: 3px 0;
-                            font-size: 12px;
-                        }
-                        .qr-section {
-                            text-align: center;
-                            margin: 20px 0;
-                            padding: 15px 0;
-                            border-top: 1px dashed #999;
-                            border-bottom: 1px dashed #999;
-                        }
-                        .qr-code-img {
-                            width: 150px;
-                            height: 150px;
-                        }
-                        .qr-code-text {
-                            font-size: 10px;
-                            margin-top: 5px;
-                            word-break: break-all;
-                            font-family: monospace;
-                        }
-                        table {
-                            width: 100%;
-                            margin: 15px 0;
-                            border-collapse: collapse;
-                        }
-                        th {
-                            text-align: left;
-                            border-bottom: 1px solid #999;
-                            padding: 5px 0;
-                            font-weight: bold;
-                            font-size: 12px;
-                        }
-                        td {
-                            padding: 5px 0;
-                            font-size: 12px;
-                        }
-                        .total-row {
-                            font-weight: bold;
-                            border-top: 2px solid #333;
-                            border-bottom: 2px solid #333;
-                            padding: 8px 0;
-                        }
-                        .address-section {
-                            margin: 15px 0;
-                            padding: 10px;
-                            background: #f5f5f5;
-                            border-radius: 5px;
-                            font-size: 12px;
-                        }
-                        .footer {
-                            text-align: center;
-                            margin-top: 20px;
-                            font-size: 11px;
-                            color: #666;
-                            border-top: 1px dashed #999;
-                            padding-top: 10px;
-                        }
-                        @media print {
-                            body { margin: 0; padding: 10px; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="receipt-header">
-                        <h1>FoodChap</h1>
-                        <p>Order Receipt</p>
-                        <p>Order #${orderNumber}</p>
-                    </div>
-                    
-                    <div class="qr-section">
-                        <p><strong>Delivery QR Code</strong></p>
-                        <img src="${qrUrl}" class="qr-code-img" alt="QR Code">
-                        <div class="qr-code-text">${qrCode}</div>
-                    </div>
-                    
-                    <div class="address-section">
-                        <strong>Delivery Address</strong><br>
-                        ${address}
-                    </div>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="text-align: left;">Item</th>
-                                <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Price</th>
-                                <th style="text-align: right;">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${itemsHtml}
-                        </tbody>
-                    </table>
-                    
-                    <div style="text-align: right;">
-                        <div style="padding: 5px 0; font-size: 12px;">
-                            <span style="display: inline-block; width: 150px; text-align: left;">Subtotal:</span>
-                            <span>TZS ${subtotal.toLocaleString()}</span>
-                        </div>
-                        <div style="padding: 5px 0; font-size: 12px;">
-                            <span style="display: inline-block; width: 150px; text-align: left;">Delivery Fee:</span>
-                            <span>TZS 2,500</span>
-                        </div>
-                        <div style="padding: 5px 0; font-size: 12px;">
-                            <span style="display: inline-block; width: 150px; text-align: left;">Tax (18%):</span>
-                            <span>TZS ${tax.toLocaleString()}</span>
-                        </div>
-                        <div class="total-row" style="padding: 8px 0;">
-                            <span style="display: inline-block; width: 150px; text-align: left;">TOTAL:</span>
-                            <span>TZS ${total.toLocaleString()}</span>
-                        </div>
-                    </div>
-                    
-                    <div class="footer">
-                        <p>Thank you for your order!</p>
-                        <p>Thank you for ordering with FoodChap Tanzania</p>
-                        <p>${new Date().toLocaleString()}</p>
-                    </div>
-                </body>
-                </html>
-            `;
-
-            printWindow.document.write(receiptContent);
-            printWindow.document.close();
-            
-            // Print after a short delay to ensure content loads
-            setTimeout(() => {
-                printWindow.print();
-            }, 250);
-        }
     </script>
 </body>
 </html>
