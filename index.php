@@ -225,6 +225,10 @@ if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
         exit;
     }
 
+    if($role === 'admin') {
+        header("Location: Admin/index.php");
+        exit;
+    }
     // Login successful
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];

@@ -1,4 +1,5 @@
 <?php
+include 'include/check_login.php';
 include '../config/connection.php';
 
 // Initialize

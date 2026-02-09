@@ -1,4 +1,5 @@
 <?php
+include 'include/check_login.php';
 include '../config/connection.php';
 
 if(!isset($_POST['order_id'])) die(json_encode(['success'=>false,'msg'=>'Order ID missing']));
@@ -6,19 +7,9 @@ if(!isset($_POST['order_id'])) die(json_encode(['success'=>false,'msg'=>'Order I
 $order_id = (int)$_POST['order_id'];
 
 // Fetch order info
-$stmt = $conn->prepare("
-SELECT o.id, o.user_id, o.total_amount, o.status, o.inserted_at,
-       o.delivery_address, o.phone, o.payment_method,
-       u.username, u.email AS user_email,
-       r.restaurant_name
-FROM orders o
-JOIN users u ON o.user_id = u.id
-JOIN order_items oi ON o.id = oi.order_id
-JOIN menu_items m ON oi.menu_item_id = m.id
-JOIN restaurants r ON m.restaurant_id = r.id
-WHERE o.id = ?
-GROUP BY o.id
-");
+$stmt = $conn->prepare("SELECT o.id, o.user_id, o.total_amount, o.status, o.inserted_at,
+       o.delivery_address, o.phone, o.payment_method, u.username, u.email AS user_email r.restaurant_name
+       FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_idJOIN menu_items m ON oi.menu_item_id = m.idJOIN restaurants r ON m.restaurant_id = r.idWHERE o.id = ?GROUP BY o.id");
 $stmt->bind_param("i",$order_id);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
