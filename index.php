@@ -6,7 +6,8 @@ include 'config/connection.php';
 $success = false;
 $message = '';
 
-function sanitize($data, $type = 'string') {
+function sanitize($data, $type = 'string')
+{
 
     if ($data === null) return false;
 
@@ -133,9 +134,9 @@ $popularRestaurants = [];
 if (isset($conn) && !$conn->connect_error) {
     $query = "SELECT id, restaurant_name, restaurant_owner, cuisine_type, phone_number, address, commission_rate, status, restaurant_image
               FROM restaurants WHERE status = 'active' ORDER BY id DESC LIMIT 12";
-    
+
     $result = $conn->query($query);
-    
+
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
             $popularRestaurants[] = $row;
@@ -147,9 +148,9 @@ if (isset($conn) && !$conn->connect_error) {
 $allRestaurants = [];
 if (isset($conn) && !$conn->connect_error) {
     $query = "SELECT id, restaurant_name, restaurant_owner, cuisine_type, phone_number, address, commission_rate, status, restaurant_image FROM restaurants WHERE status = 'active' ORDER BY id DESC";
-    
+
     $result = $conn->query($query);
-    
+
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
             $allRestaurants[] = $row;
@@ -165,9 +166,9 @@ if (isset($conn) && !$conn->connect_error) {
               INNER JOIN restaurants r ON m.restaurant_id = r.id 
               WHERE m.status = 'available' 
               ORDER BY m.id DESC LIMIT 12";
-    
+
     $result = $conn->query($query);
-    
+
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
             $menuItems[] = [
@@ -202,7 +203,7 @@ if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
 
     $sql = "SELECT id, username, email, phone_number, password FROM users WHERE email = ? LIMIT 1";
     $stmt = $conn->prepare($sql);
-    
+
     if (!$stmt) {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $conn->error]);
         exit;
@@ -211,7 +212,7 @@ if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
     $stmt->bind_param('s', $login_email);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     if ($result->num_rows === 0) {
         echo json_encode(['success' => false, 'message' => 'Email not found']);
         exit;
@@ -225,7 +226,7 @@ if (isset($_POST['login_email']) && isset($_POST['login_password'])) {
         exit;
     }
 
-    if($role === 'admin') {
+    if ($role === 'admin') {
         header("Location: Admin/index.php");
         exit;
     }
@@ -257,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     $phone   = $_POST['phone'] ?? '';
 
     if (!$items || !$address || !$method || !$phone) {
-        die(json_encode(["success"=>false,"msg"=>"Missing fields"]));
+        die(json_encode(["success" => false, "msg" => "Missing fields"]));
     }
 
     $conn->begin_transaction();
@@ -280,13 +281,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         // insert order
         $stmt = $conn->prepare(" INSERT INTO orders
         (user_id,total_amount,delivery_address,payment_method,phone,status,inserted_at,expires_at)
-        VALUES (?,?,?,?,?,'confirmed',?,?)
+        VALUES (?,?,?,?,?,'pending',?,?)
         ");
 
         $stmt->bind_param(
             "idsssss",
             $_SESSION['user_id'],
-            $total, $address, $method,  $phone,  $now,  $expires
+            $total,
+            $address,
+            $method,
+            $phone,
+            $now,
+            $expires
         );
 
         $stmt->execute();
@@ -323,41 +329,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         $verify = "http://food.local/Delivery/verify.php?order=$order_id&token=$token";
 
         $qr = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-        . urlencode($verify);
+            . urlencode($verify);
 
         echo json_encode([
-            "success"=>true,
-            "order_id"=>$order_id,
-            "qr"=>$qr,
-            "verify"=>$verify,
-            "expires"=>$expires
+            "success" => true,
+            "order_id" => $order_id,
+            "qr" => $qr,
+            "verify" => $verify,
+            "expires" => $expires
         ]);
 
         exit;
-
-    } catch(Exception $e) {
+    } catch (Exception $e) {
 
         $conn->rollback();
-        echo json_encode(["success"=>false,"msg"=>"DB error"]);
+        echo json_encode(["success" => false, "msg" => "DB error"]);
         exit;
     }
 }
 
 // Function to get user orders with item details
-function getUserOrders($conn, $user_id) {
+function getUserOrders($conn, $user_id)
+{
     $orders = [];
-    
+
     $query = " SELECT o.*,COUNT(oi.id) as item_count,SUM(oi.quantity) as total_items,GROUP_CONCAT(DISTINCT r.restaurant_name SEPARATOR ', ') as restaurant_names
         FROM orders o
         LEFT JOIN order_items oi ON o.id = oi.order_id 
         LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
         LEFT JOIN restaurants r ON mi.restaurant_id = r.id WHERE o.user_id = ? GROUP BY o.id ORDER BY o.inserted_at DESC LIMIT 20";
-    
+
     $stmt = $conn->prepare($query);
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     while ($row = $result->fetch_assoc()) {
         // Get order items for each order
         $items_query = " SELECT oi.*,mi.item_name,mi.description,mi.item_image,mi.category,r.restaurant_name
@@ -365,28 +371,47 @@ function getUserOrders($conn, $user_id) {
             JOIN menu_items mi ON oi.menu_item_id = mi.id
             JOIN restaurants r ON mi.restaurant_id = r.id
             WHERE oi.order_id = ?";
-        
+
         $items_stmt = $conn->prepare($items_query);
         $items_stmt->bind_param("i", $row['id']);
         $items_stmt->execute();
         $items_result = $items_stmt->get_result();
-        
+
         $order_items = [];
         while ($item_row = $items_result->fetch_assoc()) {
             $order_items[] = $item_row;
         }
-        
+
         $row['items'] = $order_items;
         $orders[] = $row;
     }
-    
+
     return $orders;
+}
+
+if (isset($_POST['sendmessage'])) {
+    $fullname = sanitize($_POST['fullname'] ?? '', 'string');
+    $email = sanitize($_POST['email'] ?? '', 'email');
+    $subject = sanitize($_POST['subject'] ?? '', 'string');
+    $message = sanitize($_POST['message'] ?? '', 'string');
+    if (!$fullname || !$email || !$subject || !$message) {
+        $message = 'Please fill in all fields.';
+    } else {
+        // Insert message into database
+        $sql ="INSERT INTO messages (fullname, email, subject, message) VALUES ('$fullname', '$email', '$subject', '$message')";
+        $result = mysqli_query($conn, $sql);
+        if ($result) {
+            echo 'Message sent successfully.';
+        } else {
+            echo 'Error sending message: ' . mysqli_error($conn);
+        }
+    }
 }
 ?>
 
-
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en">`
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -397,30 +422,33 @@ function getUserOrders($conn, $user_id) {
     <link rel="stylesheet" href="Assets/fontawesome/css/all.min.css">
     <!-- SweetAlert2 CSS -->
     <link rel="stylesheet" href="Assets/sweetalert2/sweetalert2.min.css">
-    <link rel="stylesheet" href="Assets/css/index.css" >
+    <link rel="stylesheet" href="Assets/css/index.css">
 </head>
+
 <body>
     <!-- Display registration message from backend using SweetAlert -->
     <?php if (!empty($message)): ?>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            Swal.fire({
-                icon: <?php echo $success ? "'success'" : "'error'"; ?>,
-                title: <?php echo $success ? "'Success!'" : "'Registration Failed'"; ?>,
-                text: <?php echo json_encode($message); ?>,
-                confirmButtonColor: <?php echo $success ? "'#28a745'" : "'#dc3545'"; ?>,
-                time: 5000,
-            }).then(() => {
-                <?php if ($success): ?>
-                    // Reset form and close modal on success
-                    document.getElementById('registerFormElement').reset();
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('authModal'));
-                    if (modal) modal.hide();
-                <?php endif; ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                Swal.fire({
+                    icon: <?php echo $success ? "'success'" : "'error'"; ?>,
+                    title: <?php echo $success ? "'Success!'" : "'Registration Failed'"; ?>,
+                    text: <?php echo json_encode($message); ?>,
+                    confirmButtonColor: <?php echo $success ? "'#28a745'" : "'#dc3545'"; ?>,
+                    time: 5000,
+                }).then(() => {
+                    <?php if ($success): ?>
+                        // Reset form and close modal on success
+                        document.getElementById('registerFormElement').reset();
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('authModal'));
+                        if (modal) modal.hide();
+                    <?php endif; ?>
+                });
+                
             });
-        });
-    </script>
+        </script>
     <?php endif; ?>
+
 
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top">
@@ -428,11 +456,11 @@ function getUserOrders($conn, $user_id) {
             <a class="navbar-brand" href="index.php">
                 <i class="fas fa-utensils me-2"></i>FoodChap <span class="tz-flag">🇹🇿</span>
             </a>
-            
+
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            
+
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
@@ -451,7 +479,7 @@ function getUserOrders($conn, $user_id) {
                         <a class="nav-link" href="index.php#payment-methods">Payments</a>
                     </li>
                 </ul>
-                
+
                 <div class="d-flex align-items-center">
                     <div class="input-group me-3 d-none d-md-flex">
                         <input type="text" class="form-control" placeholder="Search for food or restaurants">
@@ -459,12 +487,12 @@ function getUserOrders($conn, $user_id) {
                             <i class="fas fa-search"></i>
                         </button>
                     </div>
-                    
+
                     <button class="btn btn-outline-primary position-relative me-2" id="cartToggle">
                         <i class="fas fa-shopping-cart"></i>
                         <span class="badge-cart" id="cartCount">0</span>
                     </button>
-                    
+
                     <!-- User Authentication -->
                     <div class="dropdown" id="authDropdown">
                         <button class="btn btn-primary dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown">
@@ -472,10 +500,14 @@ function getUserOrders($conn, $user_id) {
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#authModal">Sign In / Register</a></li>
-                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
                             <li><a class="dropdown-item" href="#" id="viewOrders">My Orders</a></li>
                             <li><a class="dropdown-item" href="#" id="viewProfile">My Profile</a></li>
-                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
                             <li><a class="dropdown-item d-none" href="#" id="logoutBtn">Logout</a></li>
                         </ul>
                     </div>
@@ -497,7 +529,7 @@ function getUserOrders($conn, $user_id) {
                         <div class="auth-tab active" id="loginTab">Sign In</div>
                         <div class="auth-tab" id="registerTab">Register</div>
                     </div>
-                    
+
                     <!-- Login Form -->
                     <div class="auth-form active" id="loginForm">
                         <form id="loginFormElement">
@@ -515,9 +547,9 @@ function getUserOrders($conn, $user_id) {
                                 <a href="#" class="float-end">Forgot password?</a>
                             </div>
                             <button type="submit" class="btn btn-primary w-100 mb-3">Sign In</button>
-                            
+
                             <div class="text-center mb-3">Or sign in with</div>
-                            
+
                             <div class="row">
                                 <div class="col-6">
                                     <button type="button" class="social-login-btn">
@@ -532,24 +564,24 @@ function getUserOrders($conn, $user_id) {
                             </div>
                         </form>
                     </div>
-                    
+
                     <!-- Register Form -->
                     <div class="auth-form" id="registerForm">
                         <form method="post" action="index.php" id="registerFormElement">
-                           
-                                <div class="mb-3">
-                                    <label for="username" class="form-label">User Name <span>*</span></label>
-                                    <input type="text" class="form-control" id="username" name="username" placeholder="Enter user name" >
+
+                            <div class="mb-3">
+                                <label for="username" class="form-label">User Name <span>*</span></label>
+                                <input type="text" class="form-control" id="username" name="username" placeholder="Enter user name">
                             </div>
                             <div class="mb-3">
                                 <label for="registerEmail" class="form-label">Email Address <span>*</span></label>
-                                <input type="email" class="form-control" name="email" id="registerEmail" placeholder="Enter email" >
+                                <input type="email" class="form-control" name="email" id="registerEmail" placeholder="Enter email">
                             </div>
                             <div class="mb-3">
                                 <label for="phoneNumber" class="form-label">Phone Number <span>*</span></label>
                                 <div class="input-group">
                                     <span class="input-group-text">+255</span>
-                                    <input type="tel" name="phone_number" class="form-control" id="phoneNumber" placeholder="712345678" >
+                                    <input type="tel" name="phone_number" class="form-control" id="phoneNumber" placeholder="712345678">
                                 </div>
                             </div>
                             <div class="mb-3 d-none">
@@ -558,11 +590,11 @@ function getUserOrders($conn, $user_id) {
                             </div>
                             <div class="mb-3">
                                 <label for="registerPassword" class="form-label">Password <span>*</span></label>
-                                <input type="password" name="password" class="form-control" id="registerPassword" placeholder="Enter password" >
+                                <input type="password" name="password" class="form-control" id="registerPassword" placeholder="Enter password">
                             </div>
                             <div class="mb-3">
                                 <label for="confirmPassword" class="form-label">Confirm Password <span>*</span></label>
-                                <input type="password" name="confirm_password" class="form-control" id="confirmPassword" placeholder="Confirm password" >
+                                <input type="password" name="confirm_password" class="form-control" id="confirmPassword" placeholder="Confirm password">
                             </div>
                             <!-- <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="agreeTerms" required>
@@ -578,7 +610,7 @@ function getUserOrders($conn, $user_id) {
 
     <!-- Cart Sidebar -->
     <div class="cart-overlay" id="cartOverlay"></div>
-    
+
     <div class="cart-sidebar" id="cartSidebar">
         <div class="p-4">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -587,7 +619,7 @@ function getUserOrders($conn, $user_id) {
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            
+
             <div id="cartItems">
                 <!-- Cart items will be dynamically added here -->
                 <div class="text-center text-muted py-4" id="emptyCartMessage">
@@ -595,7 +627,7 @@ function getUserOrders($conn, $user_id) {
                     <p>Your cart is empty</p>
                 </div>
             </div>
-            
+
             <div class="order-summary mt-4 d-none" id="orderSummary">
                 <h5 class="mb-3">Order Summary</h5>
                 <div class="d-flex justify-content-between mb-2">
@@ -615,7 +647,7 @@ function getUserOrders($conn, $user_id) {
                     <strong>Total</strong>
                     <strong id="cartTotal">TZS 0</strong>
                 </div>
-                
+
                 <!-- Payment Method Selection -->
                 <div class="mb-4">
                     <h6 class="mb-3">Select Payment Method</h6>
@@ -654,7 +686,7 @@ function getUserOrders($conn, $user_id) {
                         </div>
                     </div>
                 </div>
-                
+
                 <button class="btn btn-primary w-100" id="checkoutBtn">
                     <i class="fas fa-lock me-2"></i>Proceed to Checkout
                 </button>
@@ -668,7 +700,7 @@ function getUserOrders($conn, $user_id) {
             <div class="text-center">
                 <h1 class="hero-title">Delicious food delivered to your door</h1>
                 <p class="lead mb-4">Order from your favorite restaurants in Tanzania and get it delivered in minutes</p>
-                
+
                 <div class="search-box">
                     <div class="input-group">
                         <input type="text" class="form-control form-control-lg" placeholder="What are you craving today?">
@@ -694,8 +726,8 @@ function getUserOrders($conn, $user_id) {
                         <div>
                             <h2 class="restaurant-name-display mb-1" id="restaurantNameDisplay">Restaurant Name</h2>
                             <div class="restaurant-info-display">
-                                <span id="restaurantCuisineDisplay">Cuisine Type</span> • 
-                                <span id="restaurantRatingDisplay">Rating</span> • 
+                                <span id="restaurantCuisineDisplay">Cuisine Type</span> •
+                                <span id="restaurantRatingDisplay">Rating</span> •
                                 <span id="restaurantDeliveryDisplay">Delivery Time</span>
                             </div>
                         </div>
@@ -708,7 +740,7 @@ function getUserOrders($conn, $user_id) {
                 </div>
             </div>
         </div>
-        
+
         <!-- Restaurants Section -->
         <section id="restaurants" class="mb-5">
             <h2 class="section-title">Popular Restaurants in Tanzania</h2>
@@ -716,7 +748,7 @@ function getUserOrders($conn, $user_id) {
                 <!-- Restaurants will be loaded dynamically -->
             </div>
         </section>
-        
+
         <!-- Menu Section -->
         <section id="menu" class="mb-5">
             <h2 class="section-title">Today's Specials</h2>
@@ -724,7 +756,7 @@ function getUserOrders($conn, $user_id) {
                 <!-- Menu items will be loaded dynamically -->
             </div>
         </section>
-        
+
         <!-- Restaurant Menu Section -->
         <section id="restaurantMenuSection" class="mb-5" style="display: none;">
             <h2 class="section-title" id="restaurantMenuTitle">Menu</h2>
@@ -732,7 +764,7 @@ function getUserOrders($conn, $user_id) {
                 <!-- Restaurant-specific menu items will be loaded dynamically -->
             </div>
         </section>
-        
+
         <!-- Testimonials Section -->
         <section id="testimonials" class="mb-5">
             <h2 class="section-title">What Our Customers Say</h2>
@@ -796,7 +828,34 @@ function getUserOrders($conn, $user_id) {
                 </div>
             </div>
         </section>
-        
+        <section class="message-section">
+            <h2>Send Us a Message</h2>
+
+            <form action="" id="sendmessage" method="POST">
+                <div class="form-group">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" id="fullname" class="form-control" name="fullname" >
+                </div>
+
+                <div class="form-group form-label">
+                    <label>Email Address</label>
+                    <input type="email" id="email" class="form-control" name="email" >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Subject</label>
+                    <input type="text" id="subject" class="form-control" name="subject" >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Message</label>
+                    <textarea name="message" id="message" class="form-control" rows="5" ></textarea>
+                </div>
+
+                <button class="send" name="sendmessage" type="submit">Send Message</button>
+            </form>
+        </section>
+
         <!-- Payment Methods Section -->
         <section id="payment-methods" class="mb-5">
             <h2 class="section-title">Tanzania Payment Methods</h2>
@@ -839,7 +898,7 @@ function getUserOrders($conn, $user_id) {
                     </div>
                 </div>
             </div>
-            
+
             <div class="row mt-4">
                 <div class="col-md-6 mb-3">
                     <div class="card border-0 shadow-sm">
@@ -919,12 +978,11 @@ function getUserOrders($conn, $user_id) {
     <script src="Assets/bootstrap/js/bootstrap.bundle.min.js"></script>
     <!-- SweetAlert2 JS -->
     <script src="Assets/sweetalert2/sweetalert2.all.min.js"></script>
-    
-    <script>
 
+    <script>
         // Use actual menu items from database (PHP)
         const menuItems = <?php echo json_encode($menuItems); ?>;
-        
+
         // Use actual restaurants from database (PHP)
         const restaurantsData = <?php echo json_encode($popularRestaurants); ?>;
 
@@ -932,10 +990,10 @@ function getUserOrders($conn, $user_id) {
         let cart = [];
         const deliveryFee = 2500; // TZS
         const taxRate = 0.18; // 18% VAT in Tanzania
-        
+
         // Current restaurant view state
         let currentRestaurantView = null;
-        
+
         // User authentication state
         let currentUser = null;
 
@@ -965,7 +1023,7 @@ function getUserOrders($conn, $user_id) {
         const restaurantMenuSection = document.getElementById('restaurantMenuSection');
         const restaurantMenuContainer = document.getElementById('restaurantMenuContainer');
         const restaurantMenuTitle = document.getElementById('restaurantMenuTitle');
-        
+
         // Authentication elements
         const authModal = new bootstrap.Modal(document.getElementById('authModal'));
         const loginTab = document.getElementById('loginTab');
@@ -989,31 +1047,33 @@ function getUserOrders($conn, $user_id) {
             loadRestaurants();
             loadMenuItems();
             updateCartCount();
-            
+
             // Check if user is already logged in
             checkLoggedInUser();
-            
+
             // Event listeners for cart
             cartToggle.addEventListener('click', toggleCart);
             closeCart.addEventListener('click', toggleCart);
             cartOverlay.addEventListener('click', toggleCart);
             checkoutBtn.addEventListener('click', checkout);
-            
+
             // Event listeners for restaurant view
             backToRestaurants.addEventListener('click', showAllRestaurants);
             orderFromRestaurant.addEventListener('click', function() {
                 if (currentRestaurantView) {
-                    document.getElementById('restaurantMenuSection').scrollIntoView({ behavior: 'smooth' });
+                    document.getElementById('restaurantMenuSection').scrollIntoView({
+                        behavior: 'smooth'
+                    });
                 }
             });
-            
+
             // Authentication event listeners
             loginTab.addEventListener('click', () => switchAuthTab('login'));
             registerTab.addEventListener('click', () => switchAuthTab('register'));
-            
+
             loginFormElement.addEventListener('submit', handleLogin);
             registerFormElement.addEventListener('submit', handleRegister);
-            
+
             logoutBtn.addEventListener('click', handleLogout);
             viewOrders.addEventListener('click', handleViewOrders);
             viewProfile.addEventListener('click', handleViewProfile);
@@ -1063,55 +1123,55 @@ function getUserOrders($conn, $user_id) {
         // Handle login form submission
         function handleLogin(e) {
             e.preventDefault();
-            
+
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
-            
+
             // Simple validation
             if (!email || !password) {
                 showAlert('Please fill in all fields', 'danger');
                 return;
             }
-            
+
             // Send login request to backend
             const formData = new FormData();
             formData.append('login_email', email);
             formData.append('login_password', password);
-            
+
             fetch('index.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    currentUser = {
-                        id: data.user.id,
-                        username: data.user.username,
-                        email: data.user.email,
-                        phone: data.user.phone_number
-                    };
-                    
-                    // Save to localStorage
-                    localStorage.setItem('foodExpressUser', JSON.stringify(currentUser));
-                    
-                    // Update UI
-                    updateUserInterface();
-                    
-                    // Close modal and show success
-                    authModal.hide();
-                    showAlert('Successfully logged in!', 'success');
-                    
-                    // Reset form
-                    loginFormElement.reset();
-                } else {
-                    showAlert(data.message || 'Login failed', 'danger');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showAlert('Login error. Please try again.', 'danger');
-            });
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentUser = {
+                            id: data.user.id,
+                            username: data.user.username,
+                            email: data.user.email,
+                            phone: data.user.phone_number
+                        };
+
+                        // Save to localStorage
+                        localStorage.setItem('foodExpressUser', JSON.stringify(currentUser));
+
+                        // Update UI
+                        updateUserInterface();
+
+                        // Close modal and show success
+                        authModal.hide();
+                        showAlert('Successfully logged in!', 'success');
+
+                        // Reset form
+                        loginFormElement.reset();
+                    } else {
+                        showAlert(data.message || 'Login failed', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showAlert('Login error. Please try again.', 'danger');
+                });
         }
 
 
@@ -1174,15 +1234,15 @@ function getUserOrders($conn, $user_id) {
             registerFormElement.submit();
         }
 
-        
+
         // Helper function to show validation errors
         function showValidationError(fieldId, errorMessage) {
             const field = document.getElementById(fieldId);
             const formGroup = field.closest('.mb-3');
-            
+
             // Add error class to field
             field.classList.add('is-invalid');
-            
+
             // Create or update error message
             let errorElement = formGroup.querySelector('.invalid-feedback');
             if (!errorElement) {
@@ -1192,17 +1252,17 @@ function getUserOrders($conn, $user_id) {
             }
             errorElement.textContent = errorMessage;
         }
-        
+
         // Helper function to clear validation errors
         function clearValidationErrors() {
             const registerForm = document.getElementById('registerForm');
             const fields = registerForm.querySelectorAll('.is-invalid');
             const errorMessages = registerForm.querySelectorAll('.invalid-feedback');
-            
+
             fields.forEach(field => {
                 field.classList.remove('is-invalid');
             });
-            
+
             errorMessages.forEach(msg => {
                 msg.remove();
             });
@@ -1217,10 +1277,10 @@ function getUserOrders($conn, $user_id) {
         }
 
         // Create the orders modal HTML 
-function createOrdersModal() {
-    if (document.getElementById('ordersModal')) return;
-    
-    const modalHTML = `
+        function createOrdersModal() {
+            if (document.getElementById('ordersModal')) return;
+
+            const modalHTML = `
     <div class="modal fade" id="ordersModal" tabindex="-1" aria-labelledby="ordersModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
@@ -1283,68 +1343,68 @@ function createOrdersModal() {
             </div>
         </div>
     </div>`;
-    
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-}
 
-// Initialize the modal when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    createOrdersModal();
-});
-
-// Main function to show orders
-function showUserOrders() {
-    createOrdersModal(); 
-    
-    const modal = new bootstrap.Modal(document.getElementById('ordersModal'));
-    
-    // Reset display
-    document.getElementById('ordersLoading').style.display = 'flex';
-    document.getElementById('ordersLoading').style.flexDirection = 'column';
-    document.getElementById('ordersLoading').style.alignItems = 'center';
-    document.getElementById('ordersContainer').style.display = 'none';
-    document.getElementById('noOrders').style.display = 'none';
-    
-    modal.show();
-    
-    // Fetch user orders
-    fetchUserOrders();
-}
-
-// Function to fetch user orders
-function fetchUserOrders() {
-    fetch('get_user_orders.php', {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'same-origin' 
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
         }
-        return response.json();
-    })
-    .then(data => {
-        document.getElementById('ordersLoading').style.display = 'none';
-        
-        if (data.success && data.orders && data.orders.length > 0) {
-            displayOrders(data.orders);
-            setupFilterButtons();
-        } else {
-            document.getElementById('noOrders').style.display = 'block';
+
+        // Initialize the modal when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            createOrdersModal();
+        });
+
+        // Main function to show orders
+        function showUserOrders() {
+            createOrdersModal();
+
+            const modal = new bootstrap.Modal(document.getElementById('ordersModal'));
+
+            // Reset display
+            document.getElementById('ordersLoading').style.display = 'flex';
+            document.getElementById('ordersLoading').style.flexDirection = 'column';
+            document.getElementById('ordersLoading').style.alignItems = 'center';
+            document.getElementById('ordersContainer').style.display = 'none';
+            document.getElementById('noOrders').style.display = 'none';
+
+            modal.show();
+
+            // Fetch user orders
+            fetchUserOrders();
         }
-    })
-    .catch(error => {
-        console.error('Error fetching orders:', error);
-        document.getElementById('ordersLoading').style.display = 'none';
-        document.getElementById('ordersContainer').style.display = 'none';
-        document.getElementById('noOrders').style.display = 'block';
-        
-        // Show error in no orders section
-        const noOrdersEl = document.getElementById('noOrders');
-        noOrdersEl.innerHTML = `
+
+        // Function to fetch user orders
+        function fetchUserOrders() {
+            fetch('get_user_orders.php', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'same-origin'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    document.getElementById('ordersLoading').style.display = 'none';
+
+                    if (data.success && data.orders && data.orders.length > 0) {
+                        displayOrders(data.orders);
+                        setupFilterButtons();
+                    } else {
+                        document.getElementById('noOrders').style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching orders:', error);
+                    document.getElementById('ordersLoading').style.display = 'none';
+                    document.getElementById('ordersContainer').style.display = 'none';
+                    document.getElementById('noOrders').style.display = 'block';
+
+                    // Show error in no orders section
+                    const noOrdersEl = document.getElementById('noOrders');
+                    noOrdersEl.innerHTML = `
             <div class="empty-state py-5">
                 <i class="fas fa-exclamation-triangle fa-4x text-danger mb-4"></i>
                 <h4>Error Loading Orders</h4>
@@ -1354,71 +1414,89 @@ function fetchUserOrders() {
                 </button>
             </div>
         `;
-    });
-}
+                });
+        }
 
-// Function to display orders
-function displayOrders(orders) {
-    const ordersList = document.getElementById('ordersList');
-    ordersList.innerHTML = '';
-    
-    // Sort orders by date (newest first)
-    orders.sort((a, b) => new Date(b.inserted_at) - new Date(a.inserted_at));
-    
-    // Count orders by status
-    const statusCounts = {
-        all: orders.length,
-        active: orders.filter(o => ['confirmed', 'preparing', 'on_the_way'].includes(o.status)).length,
-        delivered: orders.filter(o => o.status === 'delivered').length,
-        cancelled: orders.filter(o => o.status === 'cancelled').length
-    };
-    
-    // Update filter buttons count
-    document.querySelectorAll('[data-filter]').forEach(btn => {
-        const filter = btn.getAttribute('data-filter');
-        const count = statusCounts[filter] || 0;
-        btn.innerHTML = `${filter.charAt(0).toUpperCase() + filter.slice(1)} <span class="badge bg-primary ms-1">${count}</span>`;
-    });
-    
-    // Display each order
-    orders.forEach(order => {
-        const orderEl = createOrderElement(order);
-        ordersList.appendChild(orderEl);
-    });
-    
-    document.getElementById('ordersContainer').style.display = 'block';
-}
+        // Function to display orders
+        function displayOrders(orders) {
+            const ordersList = document.getElementById('ordersList');
+            ordersList.innerHTML = '';
 
-// Function to create order element
-function createOrderElement(order) {
-    const orderDate = new Date(order.inserted_at);
-    const expiresDate = new Date(order.expires_at);
-    const now = new Date();
-    const isExpired = expiresDate < now;
-    
-    
-    const statusConfig = {
-        'confirmed': { class: 'bg-primary', icon: 'fas fa-clock' },
-        'preparing': { class: 'bg-info', icon: 'fas fa-utensils' },
-        'on_the_way': { class: 'bg-warning', icon: 'fas fa-motorcycle' },
-        'delivered': { class: 'bg-success', icon: 'fas fa-check-circle' },
-        'cancelled': { class: 'bg-danger', icon: 'fas fa-times-circle' }
-    };
-    
-    const statusInfo = statusConfig[order.status] || { class: 'bg-secondary', icon: 'fas fa-question' };
-    
-    // Calculate totals
-    const subtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const delivery = 20.00; 
-    const tax = subtotal * 0.18;
-    const total = subtotal + delivery + tax;
-    
-    const col = document.createElement('div');
-    col.className = 'col-lg-6 mb-4 order-item';
-    col.setAttribute('data-status', order.status);
-    col.setAttribute('data-expired', isExpired);
-    
-    col.innerHTML = `
+            // Sort orders by date (newest first)
+            orders.sort((a, b) => new Date(b.inserted_at) - new Date(a.inserted_at));
+
+            // Count orders by status
+            const statusCounts = {
+                all: orders.length,
+                active: orders.filter(o => ['confirmed', 'preparing', 'on_the_way'].includes(o.status)).length,
+                delivered: orders.filter(o => o.status === 'delivered').length,
+                cancelled: orders.filter(o => o.status === 'cancelled').length
+            };
+
+            // Update filter buttons count
+            document.querySelectorAll('[data-filter]').forEach(btn => {
+                const filter = btn.getAttribute('data-filter');
+                const count = statusCounts[filter] || 0;
+                btn.innerHTML = `${filter.charAt(0).toUpperCase() + filter.slice(1)} <span class="badge bg-primary ms-1">${count}</span>`;
+            });
+
+            // Display each order
+            orders.forEach(order => {
+                const orderEl = createOrderElement(order);
+                ordersList.appendChild(orderEl);
+            });
+
+            document.getElementById('ordersContainer').style.display = 'block';
+        }
+
+        // Function to create order element
+        function createOrderElement(order) {
+            const orderDate = new Date(order.inserted_at);
+            const expiresDate = new Date(order.expires_at);
+            const now = new Date();
+            const isExpired = expiresDate < now;
+
+
+            const statusConfig = {
+                'confirmed': {
+                    class: 'bg-primary',
+                    icon: 'fas fa-clock'
+                },
+                'preparing': {
+                    class: 'bg-info',
+                    icon: 'fas fa-utensils'
+                },
+                'on_the_way': {
+                    class: 'bg-warning',
+                    icon: 'fas fa-motorcycle'
+                },
+                'delivered': {
+                    class: 'bg-success',
+                    icon: 'fas fa-check-circle'
+                },
+                'cancelled': {
+                    class: 'bg-danger',
+                    icon: 'fas fa-times-circle'
+                }
+            };
+
+            const statusInfo = statusConfig[order.status] || {
+                class: 'bg-secondary',
+                icon: 'fas fa-question'
+            };
+
+            // Calculate totals
+            const subtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const delivery = 20.00;
+            const tax = subtotal * 0.18;
+            const total = subtotal + delivery + tax;
+
+            const col = document.createElement('div');
+            col.className = 'col-lg-6 mb-4 order-item';
+            col.setAttribute('data-status', order.status);
+            col.setAttribute('data-expired', isExpired);
+
+            col.innerHTML = `
         <div class="card h-100 border-0 shadow-sm hover-lift">
             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                 <div>
@@ -1512,76 +1590,76 @@ function createOrderElement(order) {
             </div>
         </div>
     `;
-    
-    return col;
-}
 
-// Function to setup filter buttons
-function setupFilterButtons() {
-    const filterButtons = document.querySelectorAll('[data-filter]');
-    const orderItems = document.querySelectorAll('.order-item');
-    
-    filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            // Update active button
-            filterButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
-            const filter = this.getAttribute('data-filter');
-            
-            // Filter orders
-            orderItems.forEach(item => {
-                const status = item.getAttribute('data-status');
-                const isExpired = item.getAttribute('data-expired') === 'true';
-                
-                let show = false;
-                
-                switch(filter) {
-                    case 'all':
-                        show = true;
-                        break;
-                    case 'active':
-                        show = ['confirmed', 'preparing', 'on_the_way'].includes(status) && !isExpired;
-                        break;
-                    case 'delivered':
-                        show = status === 'delivered';
-                        break;
-                    case 'cancelled':
-                        show = status === 'cancelled';
-                        break;
-                }
-                
-                item.style.display = show ? 'block' : 'none';
+            return col;
+        }
+
+        // Function to setup filter buttons
+        function setupFilterButtons() {
+            const filterButtons = document.querySelectorAll('[data-filter]');
+            const orderItems = document.querySelectorAll('.order-item');
+
+            filterButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Update active button
+                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+
+                    const filter = this.getAttribute('data-filter');
+
+                    // Filter orders
+                    orderItems.forEach(item => {
+                        const status = item.getAttribute('data-status');
+                        const isExpired = item.getAttribute('data-expired') === 'true';
+
+                        let show = false;
+
+                        switch (filter) {
+                            case 'all':
+                                show = true;
+                                break;
+                            case 'active':
+                                show = ['confirmed', 'preparing', 'on_the_way'].includes(status) && !isExpired;
+                                break;
+                            case 'delivered':
+                                show = status === 'delivered';
+                                break;
+                            case 'cancelled':
+                                show = status === 'cancelled';
+                                break;
+                        }
+
+                        item.style.display = show ? 'block' : 'none';
+                    });
+                });
             });
-        });
-    });
-}
+        }
 
-// function for order details modal
-function viewOrderDetails(orderId) {
-    
-    fetch(`get_order_details.php?order_id=${orderId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Show order details in a modal
-                alert(`Detailed view for Order #${orderId}\nTotal: TZS${data.order.total_amount}\nStatus: ${data.order.status}`);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Unable to load order details');
-        });
-}
+        // function for order details modal
+        function viewOrderDetails(orderId) {
 
-// QR Code modal function
-function showQRCode(orderId) {
-    fetch(`get_order_qr.php?order_id=${orderId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.qr_url) {
-                const qrModal = new bootstrap.Modal(document.createElement('div'));
-                qrModal._element.innerHTML = `
+            fetch(`get_order_details.php?order_id=${orderId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show order details in a modal
+                        alert(`Detailed view for Order #${orderId}\nTotal: TZS${data.order.total_amount}\nStatus: ${data.order.status}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Unable to load order details');
+                });
+        }
+
+        // QR Code modal function
+        function showQRCode(orderId) {
+            fetch(`get_order_qr.php?order_id=${orderId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.qr_url) {
+                        const qrModal = new bootstrap.Modal(document.createElement('div'));
+                        qrModal._element.innerHTML = `
                     <div class="modal-dialog modal-sm">
                         <div class="modal-content">
                             <div class="modal-header">
@@ -1595,24 +1673,24 @@ function showQRCode(orderId) {
                         </div>
                     </div>
                 `;
-                qrModal.show();
-            }
-        });
-}
+                        qrModal.show();
+                    }
+                });
+        }
         // Handle view orders
         function handleViewOrders(e) {
             e.preventDefault();
             if (!currentUser) {
-                 authModal.show();
-                  return;
+                authModal.show();
+                return;
             }
-    
-        // Initialize and show orders modal
-        showUserOrders();
+
+            // Initialize and show orders modal
+            showUserOrders();
         }
 
         // Handle view profile
-        
+
 
         // Show alert message
         function showAlert(message, type) {
@@ -1626,9 +1704,9 @@ function showQRCode(orderId) {
                 ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
-            
+
             document.body.appendChild(alertDiv);
-            
+
             // Auto remove after 5 seconds
             setTimeout(() => {
                 if (alertDiv.parentNode) {
@@ -1640,15 +1718,15 @@ function showQRCode(orderId) {
         // Load restaurants to the page
         function loadRestaurants() {
             restaurantsContainer.innerHTML = '';
-            
+
             // Use actual restaurant data from PHP
             const actualRestaurants = <?php echo json_encode($popularRestaurants); ?>;
-            
+
             if (!actualRestaurants || actualRestaurants.length === 0) {
                 restaurantsContainer.innerHTML = '<div class="col-12 text-center py-5"><p class="text-muted">No restaurants available at this time.</p></div>';
                 return;
             }
-            
+
             actualRestaurants.forEach(restaurant => {
                 const restaurantCard = document.createElement('div');
                 restaurantCard.className = 'col-md-6 col-lg-3';
@@ -1672,7 +1750,7 @@ function showQRCode(orderId) {
                 `;
                 restaurantsContainer.appendChild(restaurantCard);
             });
-            
+
             // Add event listeners to "View Menu" buttons
             document.querySelectorAll('.view-menu-btn').forEach(button => {
                 button.addEventListener('click', function() {
@@ -1704,10 +1782,10 @@ function showQRCode(orderId) {
         // Load all menu items to the page
         function loadMenuItems() {
             menuContainer.innerHTML = '';
-            
+
             // Show only first 6 items as "Today's Specials"
             const specialItems = menuItems.slice(0, 6);
-            
+
             specialItems.forEach(item => {
                 const menuItemCard = createMenuItemCard(item);
                 menuContainer.appendChild(menuItemCard);
@@ -1741,7 +1819,7 @@ function showQRCode(orderId) {
                     </div>
                 </div>
             `;
-            
+
             // Add event listener to "Add to Cart" button
             const addButton = menuItemCard.querySelector('.add-to-cart');
             addButton.addEventListener('click', function() {
@@ -1749,10 +1827,10 @@ function showQRCode(orderId) {
                 const name = this.getAttribute('data-name');
                 const price = parseFloat(this.getAttribute('data-price'));
                 const image = this.getAttribute('data-image');
-                
+
                 addToCart(id, name, price, image);
             });
-            
+
             return menuItemCard;
         }
 
@@ -1760,9 +1838,9 @@ function showQRCode(orderId) {
         function showRestaurantMenu(restaurantId) {
             // Find restaurant from restaurantsData
             const restaurant = restaurantsData.find(r => r.id === restaurantId);
-            
+
             if (!restaurant) return;
-            
+
             // Set current restaurant view
             currentRestaurantView = {
                 id: restaurant.id,
@@ -1771,36 +1849,38 @@ function showQRCode(orderId) {
                 deliveryTime: '30-40 min',
                 rating: 4.5
             };
-            
+
             // Update restaurant menu header
             restaurantNameDisplay.textContent = currentRestaurantView.name;
             restaurantCuisineDisplay.textContent = currentRestaurantView.cuisine;
             restaurantRatingDisplay.textContent = `${currentRestaurantView.rating} ★`;
             restaurantDeliveryDisplay.textContent = currentRestaurantView.deliveryTime;
-            
+
             // Show restaurant menu header and hide regular sections
             restaurantMenuHeader.classList.add('active');
             document.getElementById('restaurants').style.display = 'none';
             document.getElementById('menu').style.display = 'none';
             restaurantMenuSection.style.display = 'block';
             restaurantMenuTitle.textContent = `${currentRestaurantView.name} Menu`;
-            
+
             // Load restaurant menu items
             loadRestaurantMenuItems(restaurantId);
-            
+
             // Scroll to top of menu section
-            restaurantMenuSection.scrollIntoView({ behavior: 'smooth' });
+            restaurantMenuSection.scrollIntoView({
+                behavior: 'smooth'
+            });
         }
 
         // Load restaurant-specific menu items
         function loadRestaurantMenuItems(restaurantId) {
             restaurantMenuContainer.innerHTML = '';
-            
+
             // Get menu items for this restaurant from database items
-            const restaurantMenuItems = menuItems.filter(item => 
+            const restaurantMenuItems = menuItems.filter(item =>
                 item.restaurantId === restaurantId
             );
-            
+
             if (restaurantMenuItems.length === 0) {
                 restaurantMenuContainer.innerHTML = `
                     <div class="col-12 text-center py-5">
@@ -1811,7 +1891,7 @@ function showQRCode(orderId) {
                 `;
                 return;
             }
-            
+
             // Group items by category
             const itemsByCategory = {};
             restaurantMenuItems.forEach(item => {
@@ -1820,7 +1900,7 @@ function showQRCode(orderId) {
                 }
                 itemsByCategory[item.category].push(item);
             });
-            
+
             // Display items by category
             for (const category in itemsByCategory) {
                 // Add category header
@@ -1828,7 +1908,7 @@ function showQRCode(orderId) {
                 categoryHeader.className = 'col-12 mt-4 mb-2';
                 categoryHeader.innerHTML = `<h4 class="text-primary">${category}</h4>`;
                 restaurantMenuContainer.appendChild(categoryHeader);
-                
+
                 // Add items for this category
                 itemsByCategory[category].forEach(item => {
                     const menuItemCard = createMenuItemCard(item);
@@ -1844,10 +1924,12 @@ function showQRCode(orderId) {
             document.getElementById('restaurants').style.display = 'block';
             document.getElementById('menu').style.display = 'block';
             restaurantMenuSection.style.display = 'none';
-            
+
             // Scroll to restaurants section
-            document.getElementById('restaurants').scrollIntoView({ behavior: 'smooth' });
-            
+            document.getElementById('restaurants').scrollIntoView({
+                behavior: 'smooth'
+            });
+
             // Clear current restaurant view
             currentRestaurantView = null;
         }
@@ -1856,7 +1938,7 @@ function showQRCode(orderId) {
         function toggleCart() {
             cartSidebar.classList.toggle('open');
             cartOverlay.classList.toggle('active');
-            
+
             if (cartSidebar.classList.contains('open')) {
                 updateCartDisplay();
             }
@@ -1865,7 +1947,7 @@ function showQRCode(orderId) {
         function addToCart(id, name, price, image) {
             // Check if item already exists in cart
             const existingItem = cart.find(item => item.id === id);
-            
+
             if (existingItem) {
                 existingItem.quantity += 1;
             } else {
@@ -1877,10 +1959,10 @@ function showQRCode(orderId) {
                     quantity: 1
                 });
             }
-            
+
             updateCartCount();
             updateCartDisplay();
-            
+
             // Show a quick confirmation
             const button = document.querySelector(`.add-to-cart[data-id="${id}"]`);
             if (button) {
@@ -1888,14 +1970,14 @@ function showQRCode(orderId) {
                 button.innerHTML = '<i class="fas fa-check me-1"></i> Added';
                 button.classList.remove('btn-primary');
                 button.classList.add('btn-success');
-                
+
                 setTimeout(() => {
                     button.innerHTML = originalText;
                     button.classList.remove('btn-success');
                     button.classList.add('btn-primary');
                 }, 1000);
             }
-            
+
             // Open cart if it's not open
             if (!cartSidebar.classList.contains('open')) {
                 toggleCart();
@@ -1915,22 +1997,22 @@ function showQRCode(orderId) {
 
         function updateCartDisplay() {
             cartItems.innerHTML = '';
-            
+
             if (cart.length === 0) {
                 emptyCartMessage.classList.remove('d-none');
                 orderSummary.classList.add('d-none');
                 return;
             }
-            
+
             emptyCartMessage.classList.add('d-none');
             orderSummary.classList.remove('d-none');
-            
+
             let subtotal = 0;
-            
+
             cart.forEach(item => {
                 const itemTotal = item.price * item.quantity;
                 subtotal += itemTotal;
-                
+
                 const cartItem = document.createElement('div');
                 cartItem.className = 'cart-item';
                 cartItem.innerHTML = `
@@ -1962,7 +2044,7 @@ function showQRCode(orderId) {
                 `;
                 cartItems.appendChild(cartItem);
             });
-            
+
             // Add event listeners to quantity buttons
             document.querySelectorAll('.decrease-quantity').forEach(button => {
                 button.addEventListener('click', function() {
@@ -1970,25 +2052,25 @@ function showQRCode(orderId) {
                     updateQuantity(id, -1);
                 });
             });
-            
+
             document.querySelectorAll('.increase-quantity').forEach(button => {
                 button.addEventListener('click', function() {
                     const id = parseInt(this.getAttribute('data-id'));
                     updateQuantity(id, 1);
                 });
             });
-            
+
             document.querySelectorAll('.remove-item').forEach(button => {
                 button.addEventListener('click', function() {
                     const id = parseInt(this.getAttribute('data-id'));
                     removeFromCart(id);
                 });
             });
-            
+
             // Update summary
             const tax = subtotal * taxRate;
             const total = subtotal + deliveryFee + tax;
-            
+
             cartSubtotal.textContent = formatCurrency(subtotal);
             cartTax.textContent = formatCurrency(tax);
             cartTotal.textContent = formatCurrency(total);
@@ -1996,10 +2078,10 @@ function showQRCode(orderId) {
 
         function updateQuantity(id, change) {
             const item = cart.find(item => item.id === id);
-            
+
             if (item) {
                 item.quantity += change;
-                
+
                 if (item.quantity <= 0) {
                     removeFromCart(id);
                 } else {
@@ -2014,14 +2096,14 @@ function showQRCode(orderId) {
                 showAlert('Your cart is empty!', 'danger');
                 return;
             }
-            
+
             // Check if user is logged in
             if (!currentUser) {
                 showAlert('Please sign in to complete your order', 'warning');
                 authModal.show();
                 return;
             }
-            
+
             // Get selected payment method
             const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
             const paymentMethods = {
@@ -2030,16 +2112,16 @@ function showQRCode(orderId) {
                 'airtelmoney': 'Airtel Money',
                 'crdb': 'CRDB Bank'
             };
-            
+
             // Calculate totals
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const tax = subtotal * taxRate;
             const total = subtotal + deliveryFee + tax;
-            
+
             // Show delivery address prompt
             const deliveryAddress = prompt('Enter your delivery address:');
             if (!deliveryAddress) return;
-            
+
             // Prepare order data
             const formData = new FormData();
             formData.append('place_order', '1');
@@ -2047,17 +2129,17 @@ function showQRCode(orderId) {
             formData.append('delivery_address', deliveryAddress);
             formData.append('payment_method', paymentMethod);
             formData.append('phone', currentUser.phone || '');
-            
+
             // Show processing message
             showAlert(`Processing ${paymentMethods[paymentMethod]} payment...`, 'info');
-            
+
             // Send order to server
             fetch('index.php', {
                 method: 'POST',
                 body: formData
-            }) 
+            })
         }
-
     </script>
 </body>
+
 </html>

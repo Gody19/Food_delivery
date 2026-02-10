@@ -1,9 +1,80 @@
 <?php
 include 'include/check_login.php';
+include '../config/connection.php';
+// Today revenue
+$q_today = $conn->query("
+    SELECT IFNULL(SUM(total_amount),0) AS today_revenue
+    FROM orders
+    WHERE DATE(inserted_at) = CURDATE()
+");
+$today = $q_today->fetch_assoc();
+
+// This month revenue
+$q_this = $conn->query("
+    SELECT IFNULL(SUM(total_amount),0) AS total
+    FROM orders
+    WHERE MONTH(inserted_at)=MONTH(CURDATE())
+    AND YEAR(inserted_at)=YEAR(CURDATE())
+");
+$this_month = $q_this->fetch_assoc()['total'];
+
+// Last month revenue
+$q_last = $conn->query("
+    SELECT IFNULL(SUM(total_amount),0) AS total
+    FROM orders
+    WHERE MONTH(inserted_at)=MONTH(CURDATE()-INTERVAL 1 MONTH)
+    AND YEAR(inserted_at)=YEAR(CURDATE()-INTERVAL 1 MONTH)
+");
+$last_month = $q_last->fetch_assoc()['total'];
+
+// Growth %
+$growth = ($last_month > 0)
+    ? (($this_month - $last_month) / $last_month) * 100
+    : 0;
+
+// Top restaurant
+/* $topRestaurant = $conn->query("
+SELECT r.restaurant_name,
+SUM(oi.quantity * oi.price) revenue
+FROM order_items oi
+JOIN menu_items m ON oi.menu_item_id=m.id
+JOIN restaurants r ON m.restaurant_id=r.id
+GROUP BY r.id
+ORDER BY revenue DESC
+LIMIT 1
+")->fetch_assoc();
+ */
+// Best selling item
+$q_best_item = $conn->query("
+    SELECT m.item_name, SUM(oi.quantity) AS sold
+    FROM order_items oi
+    JOIN menu_items m ON oi.menu_item_id = m.id
+    GROUP BY m.id
+    ORDER BY sold DESC
+    LIMIT 1
+");
+$best_item = $q_best_item->fetch_assoc();
+
+// Total orders
+$total_orders = $conn->query("SELECT COUNT(*) c FROM orders")->fetch_assoc()['c'];
+
+// Restaurants
+$total_restaurants = $conn->query("SELECT COUNT(*) c FROM restaurants")->fetch_assoc()['c'];
+
+// Pending orders
+$pending_orders = $conn->query("SELECT COUNT(*) c FROM orders WHERE status='pending'")->fetch_assoc()['c'];
+
+function lastUpdated()
+{
+    date_default_timezone_set('Africa/Dar_es_Salaam'); // Tanzania timezone
+    return "Today " . date("l, d M Y h:i A");
+}
+
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,12 +83,107 @@ include 'include/check_login.php';
     <link href="../Assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="../Assets/fontawesome/css/all.min.css">
-    
-     <link rel="stylesheet" href="css/style.css">
+
+    <link rel="stylesheet" href="css/style.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+    <style>
+        .live-clock {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #2d3748, #4a5568);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            min-width: 180px;
+            font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+        }
+
+        .clock-time {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #ffffff;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+        }
+
+        #clockHours,
+        #clockMinutes,
+        #clockSeconds {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            min-width: 32px;
+            text-align: center;
+            display: inline-block;
+        }
+
+        #clockSeconds {
+            color: #68d391;
+            font-weight: 700;
+            animation: pulse 1s infinite;
+        }
+
+        .clock-colon {
+            margin: 0 2px;
+            color: #a0aec0;
+            font-weight: 400;
+        }
+
+        .clock-day {
+            font-size: 0.875rem;
+            color: #cbd5e0;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+        }
+
+        #clockDay {
+            font-weight: 500;
+        }
+
+        .clock-date {
+            color: #a0aec0;
+            margin-left: 4px;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.8;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .live-clock {
+                min-width: 160px;
+                padding: 6px 12px;
+            }
+
+            .clock-time {
+                font-size: 1.25rem;
+            }
+
+            #clockHours,
+            #clockMinutes,
+            #clockSeconds {
+                min-width: 28px;
+                padding: 1px 4px;
+            }
+        }
+    </style>
 </head>
+
 <body>
     <!-- Sidebar -->
     <?php include 'include/aside.php'; ?>
@@ -33,330 +199,204 @@ include 'include/check_login.php';
                     <h1>Dashboard</h1>
                     <p>Welcome back, Admin! Here's what's happening with your business today.</p>
                 </div>
-                <div>
-                    <span class="text-muted me-2">Last updated: Today 10:30 AM</span>
-                    <button class="btn btn-admin btn-admin-primary">
-                        <i class="fas fa-sync-alt me-1"></i> Refresh
-                    </button>
+
+                <div class="d-flex align-items-center gap-3">
+                    <!-- Live Clock -->
+                    <div id="liveClock" class="live-clock">
+                        <div class="clock-time">
+                            <span id="clockHours">00</span>
+                            <span class="clock-colon">:</span>
+                            <span id="clockMinutes">00</span>
+                            <span class="clock-colon">:</span>
+                            <span id="clockSeconds">00</span>
+                        </div>
+                        <div class="clock-day">
+                            <span id="clockDay">Monday</span>
+                            <span class="clock-date">, <span id="clockDate">01 Jan</span></span>
+                        </div>
+                    </div>
+
                 </div>
+
             </div>
-            
-            <!-- Stats Cards -->
-            <div class="row">
-                <div class="col-xl-3 col-md-6 mb-4">
-                    <div class="stats-card primary">
-                        <div class="stats-title">TOTAL REVENUE</div>
-                        <div class="stats-value">TZS 8.4M</div>
-                        <div class="stats-change">
-                            <i class="fas fa-arrow-up me-1"></i> 12.5% from last month
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-dollar-sign"></i>
-                        </div>
+
+            <div class="dashboard-intro mb-4">
+                <p>Here's a quick overview of your restaurant's performance. Use the sidebar to navigate through different sections and manage your business effectively.</p>
+            </div>
+
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row">
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card primary">
+                    <div class="stats-title">TODAY REVENUE</div>
+                    <div class="stats-value">
+                        TZS <?= number_format($today['today_revenue']) ?>
                     </div>
-                </div>
-                
-                <div class="col-xl-3 col-md-6 mb-4">
-                    <div class="stats-card success">
-                        <div class="stats-title">TOTAL ORDERS</div>
-                        <div class="stats-value">1,248</div>
-                        <div class="stats-change">
-                            <i class="fas fa-arrow-up me-1"></i> 8.3% from last month
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-shopping-cart"></i>
-                        </div>
+                    <div class="stats-change">
+                        <i class="fas fa-calendar-day"></i> Today
                     </div>
-                </div>
-                
-                <div class="col-xl-3 col-md-6 mb-4">
-                    <div class="stats-card warning">
-                        <div class="stats-title">ACTIVE RESTAURANTS</div>
-                        <div class="stats-value">42</div>
-                        <div class="stats-change">
-                            <i class="fas fa-arrow-up me-1"></i> 2 new this month
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-store"></i>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-xl-3 col-md-6 mb-4">
-                    <div class="stats-card danger">
-                        <div class="stats-title">PENDING ORDERS</div>
-                        <div class="stats-value">18</div>
-                        <div class="stats-change">
-                            <i class="fas fa-clock me-1"></i> Need attention
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-exclamation-circle"></i>
-                        </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-dollar-sign"></i>
                     </div>
                 </div>
             </div>
-            
-            <!-- Charts and Recent Orders -->
-            <div class="row">
-                <div class="col-xl-8 col-lg-7 mb-4">
-                    <div class="dashboard-card">
-                        <div class="card-header">
-                            Revenue Overview
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container">
-                                <canvas id="revenueChart"></canvas>
-                            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card success">
+                    <div class="stats-title">MONTHLY GROWTH</div>
+                    <div class="stats-value"><?= round($growth, 1) ?>%</div>
+                    <div class="stats-change">
+                        Compared to last month
+                    </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6 mb-4 d-none">
+                <div class="stats-card warning">
+                    <div class="stats-title">TOP RESTAURANT</div>
+                    <div class="stats-value">
+                        <?= $top_restaurant['restaurant_name'] ?? 'N/A' ?>
+                    </div>
+                    <div class="stats-change">Highest revenue</div>
+                    <div class="stats-icon">
+                        <i class="fas fa-crown"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card danger">
+                    <div class="stats-title">BEST SELLING ITEM</div>
+                    <div class="stats-value">
+                        <?= $best_item['item_name'] ?? 'N/A' ?>
+                    </div>
+                    <div class="stats-change">Most ordered</div>
+                    <div class="stats-icon">
+                        <i class="fas fa-fire"></i>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="row">
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card primary">
+                    <div class="stats-title">TOTAL ORDERS</div>
+                    <div class="stats-value"><?= number_format($total_orders) ?></div>
+                </div>
+            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card success">
+                    <div class="stats-title">RESTAURANTS</div>
+                    <div class="stats-value"><?= number_format($total_restaurants) ?></div>
+                </div>
+            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="stats-card danger">
+                    <div class="stats-title">PENDING ORDERS</div>
+                    <div class="stats-value"><?= number_format($pending_orders) ?></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Charts and Recent Orders -->
+        <div class="row d-none">
+            <div class="col-xl-8 col-lg-7 mb-4">
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        Revenue Overview
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="revenueChart"></canvas>
                         </div>
                     </div>
                 </div>
-                
-                <div class="col-xl-4 col-lg-5 mb-4">
-                    <div class="dashboard-card">
-                        <div class="card-header">
-                            Order Status
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container">
-                                <canvas id="orderStatusChart"></canvas>
-                            </div>
+            </div>
+
+            <div class="col-xl-4 col-lg-5 mb-4">
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        Order Status
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="orderStatusChart"></canvas>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <?php include 'include/footer.php'; ?>
+    </div>
+    <?php include 'include/footer.php'; ?>
     </div>
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="../Assets/bootstrap/js/bootstrap.bundle.min.js"></script>
-    
+
     <script>
-        // Sample data
-        const orders = [
-            {
-                id: "ORD-1001",
-                customer: "John Doe",
-                restaurant: "Mama Ntilie Restaurant",
-                items: 3,
-                amount: "TZS 54,870",
-                status: "pending",
-                date: "2023-11-15 10:30",
-                customerPhone: "+255 712 345 678",
-                customerEmail: "john@example.com",
-                customerAddress: "123 Street, Dar es Salaam",
-                paymentMethod: "M-Pesa"
-            },
-            {
-                id: "ORD-1002",
-                customer: "Aisha Kimaro",
-                restaurant: "Burger King Dar",
-                items: 2,
-                amount: "TZS 24,500",
-                status: "confirmed",
-                date: "2023-11-15 09:15",
-                customerPhone: "+255 713 987 654",
-                customerEmail: "aisha@example.com",
-                customerAddress: "456 Avenue, Arusha",
-                paymentMethod: "Tigo Pesa"
-            },
-            {
-                id: "ORD-1003",
-                customer: "David Kato",
-                restaurant: "Tokyo Sushi Lounge",
-                items: 4,
-                amount: "TZS 68,200",
-                status: "preparing",
-                date: "2023-11-15 08:45",
-                customerPhone: "+255 714 567 890",
-                customerEmail: "david@example.com",
-                customerAddress: "789 Road, Dodoma",
-                paymentMethod: "Airtel Money"
-            },
-            {
-                id: "ORD-1004",
-                customer: "Joseph Mwambene",
-                restaurant: "Mexican Grill Arusha",
-                items: 1,
-                amount: "TZS 12,800",
-                status: "delivered",
-                date: "2023-11-14 19:20",
-                customerPhone: "+255 715 123 456",
-                customerEmail: "joseph@example.com",
-                customerAddress: "321 Boulevard, Mwanza",
-                paymentMethod: "CRDB Bank"
-            },
-            {
-                id: "ORD-1005",
-                customer: "Sarah Juma",
-                restaurant: "Mama Ntilie Restaurant",
-                items: 3,
-                amount: "TZS 42,300",
-                status: "cancelled",
-                date: "2023-11-14 17:50",
-                customerPhone: "+255 716 654 321",
-                customerEmail: "sarah@example.com",
-                customerAddress: "654 Lane, Zanzibar",
-                paymentMethod: "M-Pesa"
-            }
-        ];
+        // Initialize clock immediately
+        function updateClock() {
+            const now = new Date();
 
-        const restaurants = [
-            {
-                id: 1,
-                name: "Mama Ntilie Restaurant",
-                cuisine: "Traditional Tanzanian",
-                orders: 248,
-                rating: 4.7,
-                status: "active",
-                revenue: "TZS 4.2M"
-            },
-            {
-                id: 2,
-                name: "Burger King Dar",
-                cuisine: "Fast Food",
-                orders: 312,
-                rating: 4.5,
-                status: "active",
-                revenue: "TZS 5.1M"
-            },
-            {
-                id: 3,
-                name: "Tokyo Sushi Lounge",
-                cuisine: "Japanese",
-                orders: 189,
-                rating: 4.8,
-                status: "active",
-                revenue: "TZS 3.8M"
-            },
-            {
-                id: 4,
-                name: "Mexican Grill Arusha",
-                cuisine: "Mexican",
-                orders: 156,
-                rating: 4.4,
-                status: "active",
-                revenue: "TZS 2.9M"
-            },
-            {
-                id: 5,
-                name: "Pizza Palace",
-                cuisine: "Italian",
-                orders: 278,
-                rating: 4.6,
-                status: "inactive",
-                revenue: "TZS 4.5M"
-            },
-            {
-                id: 6,
-                name: "Seafood Delight",
-                cuisine: "Seafood",
-                orders: 134,
-                rating: 4.3,
-                status: "active",
-                revenue: "TZS 3.1M"
-            }
-        ];
+            // Get time components
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
 
-        const menuItems = [
-            {
-                id: 101,
-                name: "Nyama Choma Special",
-                restaurant: "Mama Ntilie Restaurant",
-                category: "Traditional",
-                price: "TZS 18,000",
-                status: "available"
-            },
-            {
-                id: 102,
-                name: "Cheeseburger Deluxe",
-                restaurant: "Burger King Dar",
-                category: "Main Course",
-                price: "TZS 12,000",
-                status: "available"
-            },
-            {
-                id: 103,
-                name: "California Roll",
-                restaurant: "Tokyo Sushi Lounge",
-                category: "Main Course",
-                price: "TZS 15,000",
-                status: "available"
-            },
-            {
-                id: 104,
-                name: "Chicken Tacos",
-                restaurant: "Mexican Grill Arusha",
-                category: "Main Course",
-                price: "TZS 10,000",
-                status: "available"
-            },
-            {
-                id: 105,
-                name: "Wali na Maharage",
-                restaurant: "Mama Ntilie Restaurant",
-                category: "Traditional",
-                price: "TZS 8,000",
-                status: "available"
-            },
-            {
-                id: 106,
-                name: "Pepperoni Pizza",
-                restaurant: "Pizza Palace",
-                category: "Main Course",
-                price: "TZS 14,000",
-                status: "unavailable"
-            }
-        ];
+            // Update time display
+            document.getElementById('clockHours').textContent = hours;
+            document.getElementById('clockMinutes').textContent = minutes;
+            document.getElementById('clockSeconds').textContent = seconds;
 
-        const customers = [
-            {
-                id: "CUST-1001",
-                name: "John Doe",
-                email: "john@example.com",
-                phone: "+255 712 345 678",
-                orders: 24,
-                spent: "TZS 480,500",
-                joined: "2023-01-15"
-            },
-            {
-                id: "CUST-1002",
-                name: "Aisha Kimaro",
-                email: "aisha@example.com",
-                phone: "+255 713 987 654",
-                orders: 18,
-                spent: "TZS 320,800",
-                joined: "2023-02-20"
-            },
-            {
-                id: "CUST-1003",
-                name: "David Kato",
-                email: "david@example.com",
-                phone: "+255 714 567 890",
-                orders: 32,
-                spent: "TZS 610,200",
-                joined: "2023-01-05"
-            },
-            {
-                id: "CUST-1004",
-                name: "Joseph Mwambene",
-                email: "joseph@example.com",
-                phone: "+255 715 123 456",
-                orders: 12,
-                spent: "TZS 195,400",
-                joined: "2023-03-10"
-            },
-            {
-                id: "CUST-1005",
-                name: "Sarah Juma",
-                email: "sarah@example.com",
-                phone: "+255 716 654 321",
-                orders: 8,
-                spent: "TZS 142,600",
-                joined: "2023-04-15"
-            }
-        ];
+            // Get day and date
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+            const dayName = days[now.getDay()];
+            const date = now.getDate();
+            const monthName = months[now.getMonth()];
+
+            // Update day and date display
+            document.getElementById('clockDay').textContent = dayName;
+            document.getElementById('clockDate').textContent = `${date} ${monthName}`;
+
+            // Add subtle visual feedback on seconds change
+            const secondsElement = document.getElementById('clockSeconds');
+            secondsElement.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                secondsElement.style.transform = 'scale(1)';
+            }, 100);
+        }
+
+        // Set initial time
+        updateClock();
+
+        // Update every second
+        setInterval(updateClock, 1000);
+
+        // Optional: Add smooth fade-in
+        document.addEventListener('DOMContentLoaded', function() {
+            const clock = document.getElementById('liveClock');
+            clock.style.opacity = '0';
+            clock.style.transition = 'opacity 0.5s ease';
+
+            setTimeout(() => {
+                clock.style.opacity = '1';
+            }, 50);
+        });
         // DOM elements
         const sidebar = document.getElementById('sidebar');
         const content = document.getElementById('content');
@@ -378,17 +418,17 @@ include 'include/check_login.php';
             // Initialize charts
             initRevenueChart();
             initOrderStatusChart();
-            
+
             // Load data
             loadRecentOrders();
             loadOrders();
             loadRestaurants();
             loadMenuItems();
             loadCustomers();
-            
+
             // Update pending orders badge
             updatePendingOrdersBadge();
-            
+
             // Set up event listeners
             setupEventListeners();
         });
@@ -397,54 +437,54 @@ include 'include/check_login.php';
         function setupEventListeners() {
             // Sidebar toggle
             sidebarToggle.addEventListener('click', toggleSidebar);
-            
+
             // Sidebar navigation
             sidebarItems.forEach(item => {
                 item.addEventListener('click', function(e) {
                     e.preventDefault();
-                    
+
                     // Remove active class from all items
                     sidebarItems.forEach(i => i.classList.remove('active'));
-                    
+
                     // Add active class to clicked item
                     this.classList.add('active');
-                    
+
                     // Show corresponding section
                     const section = this.getAttribute('data-section');
                     showSection(section);
-                    
+
                     // Close sidebar on mobile
                     if (window.innerWidth <= 768) {
                         toggleSidebar();
                     }
                 });
             });
-            
+
             // Admin tabs
             adminTabs.forEach(tab => {
                 tab.addEventListener('click', function() {
                     // Remove active class from all tabs
                     adminTabs.forEach(t => t.classList.remove('active'));
-                    
+
                     // Add active class to clicked tab
                     this.classList.add('active');
-                    
+
                     // Filter orders by status
                     const status = this.getAttribute('data-status');
                     filterOrdersByStatus(status);
                 });
             });
-            
+
             // View all orders button
             viewAllOrdersBtn.addEventListener('click', function(e) {
                 e.preventDefault();
-                
+
                 // Switch to orders section
                 sidebarItems.forEach(i => i.classList.remove('active'));
                 document.querySelector('.sidebar-item[data-section="orders"]').classList.add('active');
                 showSection('orders');
             });
-            
+
             // Logout button
             logoutBtn.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -466,38 +506,18 @@ include 'include/check_login.php';
             sectionContents.forEach(section => {
                 section.classList.remove('active');
             });
-            
+
             // Show selected section
             document.getElementById(`${sectionId}-section`).classList.add('active');
-            
+
             // Update page title if needed
             updatePageTitle(sectionId);
-        }
-
-        // Update page title
-        function updatePageTitle(sectionId) {
-            const titles = {
-                'dashboard': 'Dashboard',
-                'orders': 'Order Management',
-                'restaurants': 'Restaurant Management',
-                'menu': 'Menu Items Management',
-                'customers': 'Customer Management',
-                'delivery': 'Delivery Management',
-                'payments': 'Payment Management',
-                'analytics': 'Analytics',
-                'settings': 'Settings'
-            };
-            
-            const pageTitle = document.querySelector('.page-title h1');
-            if (pageTitle && titles[sectionId]) {
-                pageTitle.textContent = titles[sectionId];
-            }
         }
 
         // Initialize revenue chart
         function initRevenueChart() {
             const ctx = document.getElementById('revenueChart').getContext('2d');
-            
+
             new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -537,7 +557,7 @@ include 'include/check_login.php';
         // Initialize order status chart
         function initOrderStatusChart() {
             const ctx = document.getElementById('orderStatusChart').getContext('2d');
-            
+
             new Chart(ctx, {
                 type: 'doughnut',
                 data: {
@@ -569,7 +589,7 @@ include 'include/check_login.php';
         // Load recent orders
         function loadRecentOrders() {
             recentOrdersTable.innerHTML = '';
-            
+
             orders.slice(0, 5).forEach(order => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -587,7 +607,7 @@ include 'include/check_login.php';
                 `;
                 recentOrdersTable.appendChild(row);
             });
-            
+
             // Add event listeners to view order buttons
             document.querySelectorAll('.view-order').forEach(button => {
                 button.addEventListener('click', function() {
@@ -600,7 +620,7 @@ include 'include/check_login.php';
         // Load all orders
         function loadOrders() {
             ordersTable.innerHTML = '';
-            
+
             orders.forEach(order => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -622,7 +642,7 @@ include 'include/check_login.php';
                 `;
                 ordersTable.appendChild(row);
             });
-            
+
             // Add event listeners
             document.querySelectorAll('.view-order').forEach(button => {
                 button.addEventListener('click', function() {
@@ -635,7 +655,7 @@ include 'include/check_login.php';
         // Filter orders by status
         function filterOrdersByStatus(status) {
             const rows = ordersTable.querySelectorAll('tr');
-            
+
             rows.forEach(row => {
                 if (status === 'all') {
                     row.style.display = '';
@@ -651,12 +671,12 @@ include 'include/check_login.php';
         }
 
         // Load restaurants
-        
+
 
         // Load menu items
         function loadMenuItems() {
             menuItemsTable.innerHTML = '';
-            
+
             menuItems.forEach(item => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -682,7 +702,7 @@ include 'include/check_login.php';
         // Load customers
         function loadCustomers() {
             customersTable.innerHTML = '';
-            
+
             customers.forEach(customer => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -716,7 +736,7 @@ include 'include/check_login.php';
         function showOrderDetails(orderId) {
             const order = orders.find(o => o.id === orderId);
             if (!order) return;
-            
+
             // Populate modal with order details
             document.getElementById('orderIdDisplay').textContent = orderId.replace('ORD-', '');
             document.getElementById('customerName').textContent = order.customer;
@@ -726,15 +746,15 @@ include 'include/check_login.php';
             document.getElementById('orderTime').textContent = formatDate(order.date, true);
             document.getElementById('orderRestaurant').textContent = order.restaurant;
             document.getElementById('paymentMethod').textContent = order.paymentMethod;
-            
+
             // Update status badge
             const statusBadge = document.getElementById('orderStatus');
             statusBadge.className = `status-badge status-${order.status}`;
             statusBadge.textContent = formatStatus(order.status);
-            
+
             // Set status in select
             document.getElementById('updateOrderStatus').value = order.status;
-            
+
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
             modal.show();
@@ -755,7 +775,10 @@ include 'include/check_login.php';
         function formatDate(dateString, includeTime = false) {
             const date = new Date(dateString);
             if (includeTime) {
-                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
             }
             return date.toLocaleDateString();
         }
@@ -780,4 +803,5 @@ include 'include/check_login.php';
         const orderDetailsModal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
     </script>
 </body>
+
 </html>

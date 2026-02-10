@@ -1,4 +1,27 @@
 <?php
+if (isset($_GET['timeout'])): ?>
+<script src="../Assets/sweetalert2/sweetalert2.all.min.js"></script>
+<script>
+Swal.fire({
+    icon: 'warning',
+    title: 'Session expired',
+    text: 'You were logged out due to inactivity'
+});
+</script>
+<?php endif; ?>
+
+<?php if (isset($_GET['unauthorized'])): ?>
+<script src="../Assets/sweetalert2/sweetalert2.all.min.js"></script>
+<script>
+Swal.fire({
+    icon: 'error',
+    title: 'Unauthorized access',
+    text: 'Please login as admin'
+});
+</script>
+<?php endif; ?>
+<?php
+
 session_start();
 include '../config/connection.php';
 
