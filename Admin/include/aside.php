@@ -32,21 +32,21 @@
             <i class="fas fa-users"></i> Customers
         </a>
 
-        <a href="#delivery" class="sidebar-item" data-section="delivery">
+        <a href="#delivery" class="sidebar-item d-none" data-section="delivery">
             <i class="fas fa-motorcycle"></i> Delivery
         </a>
 
-        <a href="#payments" class="sidebar-item" data-section="payments">
-            <i class="fas fa-credit-card"></i> Payments
+        <a href="messages.php" class="sidebar-item" data-section="messages">
+            <i class="fas fa-envelope"></i> Messages
         </a>
 
-        <a href="#analytics" class="sidebar-item" data-section="analytics">
+        <a href="#analytics" class="sidebar-item d-none" data-section="analytics">
             <i class="fas fa-chart-line"></i> Analytics
         </a>
 
         <div class="sidebar-divider"></div>
 
-        <a href="#settings" class="sidebar-item" data-section="settings">
+        <a href="#settings " class="sidebar-item d-none" data-section="settings">
             <i class="fas fa-cog"></i> Settings
         </a>
 

@@ -271,7 +271,7 @@ function lastUpdated()
             </div>
 
             <div class="col-xl-4 col-md-6 mb-4">
-                <div class="stats-card danger">
+                <div class="stats-card bg-info">
                     <div class="stats-title">BEST SELLING ITEM</div>
                     <div class="stats-value">
                         <?= $best_item['item_name'] ?? 'N/A' ?>
@@ -303,7 +303,7 @@ function lastUpdated()
             </div>
 
             <div class="col-xl-4 col-md-6 mb-4">
-                <div class="stats-card danger">
+                <div class="stats-card bg-warning">
                     <div class="stats-title">PENDING ORDERS</div>
                     <div class="stats-value"><?= number_format($pending_orders) ?></div>
                 </div>
